@@ -21,19 +21,25 @@ const [selectedAddress, setSelectedAddress] = useState<`0x${string}` | undefined
   const [metaCID, setMetaCID] = useState<string | null>(null)
 
   /* ───────── on‑chain look‑ups ───────── */
-  const { data: name } = useReadContract({
-    address: selectedAddress,
-    abi: [{ name: 'name', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] }],
-    functionName: 'name',
-    enabled: !!selectedAddress,
-  })
+const nameResult = selectedAddress
+  ? useReadContract({
+      address: selectedAddress,
+      abi: [{ name: 'name', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] }],
+      functionName: 'name',
+    })
+  : { data: undefined }
 
-  const { data: symbol } = useReadContract({
-    address: selectedAddress,
-    abi: [{ name: 'symbol', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] }],
-    functionName: 'symbol',
-    enabled: !!selectedAddress,
-  })
+const symbolResult = selectedAddress
+  ? useReadContract({
+      address: selectedAddress,
+      abi: [{ name: 'symbol', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] }],
+      functionName: 'symbol',
+    })
+  : { data: undefined }
+
+const name = nameResult.data
+const symbol = symbolResult.data
+
 
   /* ───────── helpers ───────── */
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
