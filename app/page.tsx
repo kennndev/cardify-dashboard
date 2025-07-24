@@ -9,7 +9,7 @@ import {
   useAccount,
   usePublicClient,
 } from 'wagmi'
-import { parseEther, formatEther, keccak256, toBytes } from 'viem'
+import { parseEther, formatEther, keccak256, toBytes, encodePacked } from 'viem'
 import Link from 'next/link'
 
 // ────────────────────────────────────────────────────────────────────────────────
