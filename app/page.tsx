@@ -10,6 +10,7 @@ import {
   usePublicClient,
 } from 'wagmi'
 import { parseEther, formatEther, keccak256, toBytes } from 'viem'
+import Link from 'next/link'
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Factory contract
@@ -121,10 +122,16 @@ const { data: collectionsData, refetch } = useReadContract(
                 refetch()
               }}
             />
+                     <Link href="/generateHashes">
+    <button className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
+      Generate Hashes
+    </button>
+  </Link>
           </div>
 
           {tab === 'deploy' && <DeployForm onDeployed={(hash) => { setTxHash(hash); refetch() }} />}
           {tab === 'mine' && <MyCollections addresses={collections} viewer={user!.wallet!.address!} />}
+  
 
           {txHash && (
             <p className="mt-4 text-sm">
@@ -230,44 +237,70 @@ function CollectionRow({ addr, viewer }: CollectionRowProps) {
   const { writeContractAsync, isPending } = useWriteContract()
   const isOwner = owner?.toLowerCase() === viewer.toLowerCase()
 
-  async function handleAddHashes() {
-    try {
-      const hashes = pairsInput
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-        .map((line) => {
-          // support either raw 0x… hash or "code,uri"
-          if (line.startsWith('0x') && line.length === 66) return line as `0x${string}`
-          const [code, uri] = line.split(',')
-          return keccak256(toBytes(code + uri))
-        })
 
-      if (!hashes.length) return alert('No valid lines found')
-      const hash = await writeContractAsync({
-        address: addr,
-        abi: nftAbi,
-        functionName: 'addValidHashes',
-        args: [hashes],
-      })
-      setPairsInput('')
-      setOpen(false)
-      alert('Hashes added! Tx: ' + hash)
-    } catch (err: any) {
-      alert(err?.message || 'Tx failed')
+  /* ───────── inside CollectionRow ───────── */
+async function handleAddHashes() {
+  try {
+    // 1️⃣ normalise the textarea content into *pure* 0x‑hex strings
+    const raw = pairsInput.trim()
+
+    // a) user pasted the JSON array from “Hashes” box
+    //    e.g. ["0xabc…","0xdef…"]
+    let list: string[]
+    if (raw.startsWith('[')) {
+      list = JSON.parse(raw).map((h: string) => h.trim())
+    } else {
+      // b) line‑by‑line: either   0x…    or   CODE,uri
+      list = raw.split('\n').map((l) => l.trim()).filter(Boolean)
     }
+
+    // 2️⃣ build the final bytes32[]
+    const hashes = list.map((item) => {
+      // i. already a clean 0x hash
+      const cleaned = item
+        .replace(/^[,"\[\]\s]+|[,"\[\]\s]+$/g, '') // strip quotes, commas, brackets
+        .toLowerCase()
+
+      if (cleaned.startsWith('0x') && cleaned.length === 66) return cleaned as `0x${string}`
+
+      // ii. CODE,uri → derive on the fly
+      const [code, uri] = item.split(',').map((s) => s.trim())
+      if (!code || !uri) throw new Error(`Bad line: “${item}”`)
+      return keccak256(encodePacked(['string', 'string'], [code, uri]))
+    })
+
+    if (!hashes.length) throw new Error('No valid hashes found')
+
+    const hash = await writeContractAsync({
+      address: addr,
+      abi: nftAbi,
+      functionName: 'addValidHashes',
+      args: [hashes],
+    })
+
+    setPairsInput('')
+    setOpen(false)
+    alert(`Hashes added! Tx: ${hash}`)
+  } catch (err: any) {
+    alert(err?.message || 'Tx failed')
   }
+}
+
 
   return (
     <li className="border rounded p-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-medium">
-            {name ?? '…'} ({symbol ?? '…'})
-          </h3>
-          <p className="text-sm text-gray-600">
-            Price: {price ? formatEther(price as bigint) : '…'} ETH
-          </p>
+    <h3 className="font-medium">
+  {name ?? '…'} ({symbol ?? '…'})
+</h3>
+<p className="text-sm text-gray-600">
+  Address: <span className="font-mono text-xs">{addr}</span>
+</p>
+<p className="text-sm text-gray-600">
+  Price: {price ? formatEther(price as bigint) : '…'} ETH
+</p>
+
         </div>
         <div className="flex items-center gap-3">
           <a href={`https://sepolia.etherscan.io/address/${addr}`} target="_blank" rel="noreferrer" className="underline text-sm">
@@ -287,7 +320,7 @@ function CollectionRow({ addr, viewer }: CollectionRowProps) {
             rows={4}
             value={pairsInput}
             onChange={(e) => setPairsInput(e.target.value)}
-            placeholder={'One per line: code,uri  —OR—  raw 0x hash'}
+            placeholder={'generate hashes and paste them here'}
             className="w-full border p-2 rounded text-sm"
           />
           <button
