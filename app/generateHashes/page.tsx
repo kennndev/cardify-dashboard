@@ -13,7 +13,7 @@ export default function GenerateHashesTab() {
   /* ───────── local state ───────── */
   const [images, setImages] = useState<File[]>([])
   const [passes, setPasses] = useState('')
-  const [selectedAddress, setSelectedAddress] = useState<`0x${string}` | ''>('')
+const [selectedAddress, setSelectedAddress] = useState<`0x${string}` | undefined>(undefined)
 
   const [hashesOutput, setHashesOutput] = useState<string[]>([])
   const [combinedOutput, setCombinedOutput] = useState<Combined[]>([])
@@ -128,11 +128,15 @@ export default function GenerateHashesTab() {
       {/* Address selector */}
       <label className="block font-medium">NFT Collection address</label>
       <input
-        className="w-full p-2 border rounded"
-        placeholder="0x…"
-        value={selectedAddress}
-        onChange={(e) => setSelectedAddress(e.target.value as `0x${string}`)}
-      />
+  className="w-full p-2 border rounded"
+  placeholder="0x…"
+  value={selectedAddress ?? ''}
+  onChange={(e) => {
+    const value = e.target.value
+    setSelectedAddress(value.startsWith('0x') ? (value as `0x${string}`) : undefined)
+  }}
+/>
+
       {name && symbol && (
         <p className="text-sm text-gray-600">
           Loaded → <b>{name}</b> ({symbol})
