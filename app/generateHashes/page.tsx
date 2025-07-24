@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import { keccak256, encodePacked } from 'viem'
 import { useReadContract } from 'wagmi'
@@ -13,33 +13,66 @@ export default function GenerateHashesTab() {
   /* ───────── local state ───────── */
   const [images, setImages] = useState<File[]>([])
   const [passes, setPasses] = useState('')
-const [selectedAddress, setSelectedAddress] = useState<`0x${string}` | undefined>(undefined)
+
+  /** keeps whatever the user is typing */
+  const [addressInput, setAddressInput] = useState('')
+  /** only set when `addressInput` is a 42‑char 0x string */
+  const [selectedAddress, setSelectedAddress] =
+    useState<`0x${string}` | undefined>(undefined)
 
   const [hashesOutput, setHashesOutput] = useState<string[]>([])
   const [combinedOutput, setCombinedOutput] = useState<Combined[]>([])
   const [status, setStatus] = useState('')
   const [metaCID, setMetaCID] = useState<string | null>(null)
 
+  /* ───────── sync typed value → validated address ───────── */
+  useEffect(() => {
+    const v = addressInput.trim()
+    if (v.startsWith('0x') && v.length === 42) {
+      setSelectedAddress(v as `0x${string}`)
+    } else {
+      setSelectedAddress(undefined)
+    }
+  }, [addressInput])
+
   /* ───────── on‑chain look‑ups ───────── */
-const nameResult = selectedAddress
-  ? useReadContract({
-      address: selectedAddress,
-      abi: [{ name: 'name', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] }],
-      functionName: 'name',
-    })
-  : { data: undefined }
+  const nameResult = useReadContract(
+    selectedAddress
+      ? {
+          address: selectedAddress,
+          abi: [
+            {
+              name: 'name',
+              type: 'function',
+              stateMutability: 'view',
+              inputs: [],
+              outputs: [{ type: 'string' }],
+            },
+          ],
+          functionName: 'name',
+        }
+      : undefined,
+  )
+  const symbolResult = useReadContract(
+    selectedAddress
+      ? {
+          address: selectedAddress,
+          abi: [
+            {
+              name: 'symbol',
+              type: 'function',
+              stateMutability: 'view',
+              inputs: [],
+              outputs: [{ type: 'string' }],
+            },
+          ],
+          functionName: 'symbol',
+        }
+      : undefined,
+  )
 
-const symbolResult = selectedAddress
-  ? useReadContract({
-      address: selectedAddress,
-      abi: [{ name: 'symbol', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] }],
-      functionName: 'symbol',
-    })
-  : { data: undefined }
-
-const name = nameResult.data
-const symbol = symbolResult.data
-
+  const name = nameResult.data
+  const symbol = symbolResult.data
 
   /* ───────── helpers ───────── */
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -48,7 +81,7 @@ const symbol = symbolResult.data
 
   async function handleGenerate() {
     if (!images.length || !passes.trim()) return alert('Upload images and enter passes')
-    if (!selectedAddress) return alert('Select a collection address')
+    if (!selectedAddress) return alert('Enter a valid 0x address (42 chars)')
 
     const passList = passes
       .trim()
@@ -75,7 +108,7 @@ const symbol = symbolResult.data
 
       /* 2️⃣ Build & upload metadata folder */
       setStatus('Uploading metadata…')
-      const folder = 'metadata' // sub‑directory inside root CID
+      const folder = 'metadata'
       const metaFD = new FormData()
 
       passList.forEach((code, i) => {
@@ -84,7 +117,6 @@ const symbol = symbolResult.data
           description: `Claimed with ${code}`,
           image: imgCIDs[i],
         }
-        // important: include directory path in filename
         metaFD.append(
           'file',
           new Blob([JSON.stringify(meta)], { type: 'application/json' }),
@@ -95,11 +127,9 @@ const symbol = symbolResult.data
       metaFD.append('pinataMetadata', JSON.stringify({ name: 'cardify‑metadata‑folder' }))
       metaFD.append('pinataOptions', JSON.stringify({ wrapWithDirectory: true }))
 
-      const metaRes = await axios.post(
-        'https://api.pinata.cloud/pinning/pinFileToIPFS',
-        metaFD,
-        { headers: { Authorization: `Bearer ${pinataJWT}` } },
-      )
+      const metaRes = await axios.post('https://api.pinata.cloud/pinning/pinFileToIPFS', metaFD, {
+        headers: { Authorization: `Bearer ${pinataJWT}` },
+      })
 
       const cid: string = metaRes.data.IpfsHash
       setMetaCID(cid)
@@ -107,14 +137,16 @@ const symbol = symbolResult.data
       /* 3️⃣ Generate hashes + combined list */
       setStatus('Generating hashes…')
       const hashes = passList.map((code, i) =>
-        keccak256(encodePacked(['string', 'string'], [code, `ipfs://${cid}/${folder}/${i}.json`])),
+        keccak256(
+          encodePacked(['string', 'string'], [code, `ipfs://${cid}/metadata/${i}.json`]),
+        ),
       )
 
       setHashesOutput(hashes)
 
       const combined = passList.map<Combined>((code, i) => ({
         code,
-        uri: `ipfs://${cid}/${folder}/${i}.json`,
+        uri: `ipfs://${cid}/metadata/${i}.json`,
         hash: hashes[i],
       }))
       setCombinedOutput(combined)
@@ -134,14 +166,11 @@ const symbol = symbolResult.data
       {/* Address selector */}
       <label className="block font-medium">NFT Collection address</label>
       <input
-  className="w-full p-2 border rounded"
-  placeholder="0x…"
-  value={selectedAddress ?? ''}
-  onChange={(e) => {
-    const value = e.target.value
-    setSelectedAddress(value.startsWith('0x') ? (value as `0x${string}`) : undefined)
-  }}
-/>
+        className="w-full p-2 border rounded"
+        placeholder="0x…"
+        value={addressInput}
+        onChange={(e) => setAddressInput(e.target.value)}
+      />
 
       {name && symbol && (
         <p className="text-sm text-gray-600">
@@ -166,10 +195,9 @@ const symbol = symbolResult.data
       </div>
 
       <button onClick={handleGenerate} className="px-4 py-2 bg-black text-white rounded">
-        Generate & Upload
+        Generate &amp; Upload
       </button>
 
-      {/* Status + outputs */}
       {status && <p className="text-sm text-blue-600">{status}</p>}
 
       {metaCID && (
@@ -178,7 +206,6 @@ const symbol = symbolResult.data
         </p>
       )}
 
-      {/* Box 1 – hashes */}
       {hashesOutput.length > 0 && (
         <>
           <h3 className="font-semibold mt-4">Hashes (for addValidHashes)</h3>
@@ -188,7 +215,6 @@ const symbol = symbolResult.data
         </>
       )}
 
-      {/* Box 2 – full records */}
       {combinedOutput.length > 0 && (
         <>
           <h3 className="font-semibold mt-4">Code / URI / Hash</h3>
