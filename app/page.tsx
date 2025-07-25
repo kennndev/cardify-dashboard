@@ -9,7 +9,7 @@ import {
   useAccount,
   usePublicClient,
 } from 'wagmi'
-import { parseEther, formatEther, keccak256, toBytes, encodePacked } from 'viem'
+import { parseEther, formatEther, keccak256, toBytes, encodePacked, parseEventLogs } from 'viem'
 import Link from 'next/link'
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -17,16 +17,17 @@ import Link from 'next/link'
 // ────────────────────────────────────────────────────────────────────────────────
 const factoryAddress = process.env.NEXT_PUBLIC_FACTORY_ADDRESS as `0x${string}`
 const factoryAbi = [
+  /* ─── functions ─── */
   {
     name: 'createCollection',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
-      { name: 'name', type: 'string' },
-      { name: 'symbol', type: 'string' },
-      { name: 'price', type: 'uint256' },
-      { name: 'royaltyRecipient', type: 'address' },
-      { name: 'royaltyPercentage', type: 'uint96' },
+      { name: 'name',               type: 'string'  },
+      { name: 'symbol',             type: 'string'  },
+      { name: 'price',              type: 'uint256' },
+      { name: 'royaltyRecipient',   type: 'address' },
+      { name: 'royaltyPercentage',  type: 'uint96'  },
     ],
     outputs: [{ name: 'collectionAddress', type: 'address' }],
   },
@@ -34,10 +35,27 @@ const factoryAbi = [
     name: 'getUserCollections',
     type: 'function',
     stateMutability: 'view',
-    inputs: [{ name: 'user', type: 'address' }],
+    inputs : [{ name: 'user', type: 'address' }],
     outputs: [{ type: 'address[]' }],
   },
+
+  /* ─── event we forgot ─── */
+  {
+    anonymous: false,
+    name : 'CollectionDeployed',
+    type : 'event',
+    inputs: [
+      { indexed: true,  name: 'creator',           type: 'address' },
+      { indexed: false, name: 'collectionAddress', type: 'address' },
+      { indexed: false, name: 'name',              type: 'string'  },
+      { indexed: false, name: 'symbol',            type: 'string'  },
+      { indexed: false, name: 'mintPrice',         type: 'uint256' },
+      { indexed: false, name: 'royaltyRecipient',  type: 'address' },
+      { indexed: false, name: 'royaltyPercentage', type: 'uint96'  },
+    ],
+  },
 ] as const
+
 
 // Minimal ABI for CardifyNFT metadata + admin
 const nftAbi = [
@@ -167,52 +185,103 @@ function Tab({ label, active, onClick }: { label: string; active: boolean; onCli
 }
 
 function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
-  const [name, setName] = useState('')
-  const [symbol, setSymbol] = useState('')
-  const [price, setPrice] = useState('')
+ const [name,             setName]   = useState('')
+  const [symbol,           setSymbol] = useState('')
+  const [price,            setPrice]  = useState('')
   const [royaltyRecipient, setRoyaltyRecipient] = useState('')
-  const [royaltyPct, setRoyaltyPct] = useState('')
+  const [royaltyPct,       setRoyaltyPct] = useState('')
 
-  const { data: walletClient } = useWalletClient()
-  const { isConnected } = useAccount()
-  const { writeContractAsync } = useWriteContract()
+  /* ───── hooks ───── */
+  const { user }                  = usePrivy()              // gives Supabase user_id
+  const { isConnected }           = useAccount()
+  const { data: walletClient }    = useWalletClient()
+  const { writeContractAsync }    = useWriteContract()
+  const  publicClient             = usePublicClient()
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!isConnected || !walletClient) return alert('Connect wallet first')
+  
 
-    const hash = await writeContractAsync({
-      account: walletClient.account,
-      address: factoryAddress,
-      abi: factoryAbi,
-      functionName: 'createCollection',
-      args: [
-        name,
-        symbol,
-        BigInt(parseEther(price)),
-        royaltyRecipient as `0x${string}`,
-        BigInt(royaltyPct),
-      ],
-    })
-
-    onDeployed(hash as string)
-    setName('')
-    setSymbol('')
-    setPrice('0')
-    setRoyaltyRecipient('')
-    setRoyaltyPct('0')
+async function handleSubmit(e: React.FormEvent) {
+  e.preventDefault()
+  if (!isConnected || !walletClient || !publicClient) {
+    alert('Wallet or client not ready')
+    return
   }
 
-  return (
+  /* 1️⃣  send tx ------------------------------------------------------------ */
+  const txHash = await writeContractAsync({
+    account      : walletClient.account,
+    address      : factoryAddress,
+    abi          : factoryAbi,
+    functionName : 'createCollection',
+    args: [
+      name,
+      symbol,
+      BigInt(parseEther(price || '0')),
+      royaltyRecipient as `0x${string}`,
+      BigInt(royaltyPct || '0'),
+    ],
+  })
+
+  /* 2️⃣  wait for inclusion ------------------------------------------------- */
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
+
+  /* 3️⃣  extract the CollectionDeployed event ------------------------------ */
+  const events = parseEventLogs({
+    abi       : factoryAbi,                 // now includes CollectionDeployed
+    logs      : receipt.logs,
+    eventName : 'CollectionDeployed',
+  })
+
+  const collectionAddress =
+    events[0].args.collectionAddress as `0x${string}`
+
+  /* 4️⃣  save in Supabase --------------------------------------------------- */
+  await fetch('/api/collections', {
+    method : 'POST',
+    body   : JSON.stringify({
+      address : collectionAddress.toLowerCase(),
+      owner   : walletClient.account.address.toLowerCase(),
+    }),
+  })
+
+  /* 5️⃣  notify parent + reset form ---------------------------------------- */
+  onDeployed(txHash)
+  setName('')
+  setSymbol('')
+  setPrice('')
+  setRoyaltyRecipient('')
+  setRoyaltyPct('')
+}
+
+
+
+return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
-        <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" className="p-3 border rounded" />
-        <input required value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="Symbol" className="p-3 border rounded" />
-        <input required type="number" step="0.0001" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Mint Price (ETH)" className="p-3 border rounded" />
-        <input required value={royaltyRecipient} onChange={(e) => setRoyaltyRecipient(e.target.value)} placeholder="Royalty Recipient" className="p-3 border rounded" />
-        <input required type="number" value={royaltyPct} onChange={(e) => setRoyaltyPct(e.target.value)} placeholder="Royalty % (e.g. 250)" className="p-3 border rounded col-span-2" />
+        <input  required value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Name"  className="p-3 border rounded" />
+
+        <input  required value={symbol}
+                onChange={(e) => setSymbol(e.target.value)}
+                placeholder="Symbol" className="p-3 border rounded" />
+
+        <input  required type="number" step="0.0001" value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="Mint Price (ETH)" className="p-3 border rounded" />
+
+        <input  required value={royaltyRecipient}
+                onChange={(e) => setRoyaltyRecipient(e.target.value)}
+                placeholder="Royalty Recipient" className="p-3 border rounded" />
+
+        <input  required type="number" value={royaltyPct}
+                onChange={(e) => setRoyaltyPct(e.target.value)}
+                placeholder="Royalty % (e.g. 250)" className="p-3 border rounded col-span-2" />
       </div>
-      <button type="submit" className="px-6 py-3 bg-black text-white rounded w-full disabled:opacity-50" disabled={!isConnected}>
+
+      <button type="submit"
+              disabled={!isConnected}
+              className="px-6 py-3 bg-black text-white rounded w-full disabled:opacity-50">
         {isConnected ? 'Deploy Collection' : 'Connect Wallet'}
       </button>
     </form>
@@ -230,106 +299,129 @@ function CollectionRow({ addr, viewer }: CollectionRowProps) {
   const { data: symbol } = useReadContract({ address: addr, abi: nftAbi, functionName: 'symbol' })
   const { data: price } = useReadContract({ address: addr, abi: nftAbi, functionName: 'mintPrice' })
   const { data: owner } = useReadContract({ address: addr, abi: nftAbi, functionName: 'owner' })
-
-  // add‑hashes form state
-  const [open, setOpen] = useState(false)
-  const [pairsInput, setPairsInput] = useState('') // code,uri per line
-  const { writeContractAsync, isPending } = useWriteContract()
   const isOwner = owner?.toLowerCase() === viewer.toLowerCase()
 
+  const [pushing, setPushing] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [pairsInput, setPairsInput] = useState('')
+  const { writeContractAsync, isPending } = useWriteContract()
 
-  /* ───────── inside CollectionRow ───────── */
-async function handleAddHashes() {
-  try {
-    // 1️⃣ normalise the textarea content into *pure* 0x‑hex strings
-    const raw = pairsInput.trim()
+  async function handleAddToFrontend() {
+    try {
+      setPushing(true)
+      const res = await fetch(`/api/collections/${addr.toLowerCase()}`)
+      if (!res.ok) throw new Error(await res.text())
+      const { cid } = await res.json()
+      if (!cid) throw new Error('No CID saved for this collection')
 
-    // a) user pasted the JSON array from “Hashes” box
-    //    e.g. ["0xabc…","0xdef…"]
-    let list: string[]
-    if (raw.startsWith('[')) {
-      list = JSON.parse(raw).map((h: string) => h.trim())
-    } else {
-      // b) line‑by‑line: either   0x…    or   CODE,uri
-      list = raw.split('\n').map((l) => l.trim()).filter(Boolean)
+      const fe = await fetch('https://cardifyy.vercel.app/api/import-collection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: addr.toLowerCase(), cid }),
+      })
+
+      if (!fe.ok) throw new Error((await fe.json()).error || 'Frontend rejected')
+
+      alert('✅ Collection sent to frontend')
+    } catch (err: any) {
+      alert(err.message)
+    } finally {
+      setPushing(false)
     }
-
-    // 2️⃣ build the final bytes32[]
-    const hashes = list.map((item) => {
-      // i. already a clean 0x hash
-      const cleaned = item
-        .replace(/^[,"\[\]\s]+|[,"\[\]\s]+$/g, '') // strip quotes, commas, brackets
-        .toLowerCase()
-
-      if (cleaned.startsWith('0x') && cleaned.length === 66) return cleaned as `0x${string}`
-
-      // ii. CODE,uri → derive on the fly
-      const [code, uri] = item.split(',').map((s) => s.trim())
-      if (!code || !uri) throw new Error(`Bad line: “${item}”`)
-      return keccak256(encodePacked(['string', 'string'], [code, uri]))
-    })
-
-    if (!hashes.length) throw new Error('No valid hashes found')
-
-    const hash = await writeContractAsync({
-      address: addr,
-      abi: nftAbi,
-      functionName: 'addValidHashes',
-      args: [hashes],
-    })
-
-    setPairsInput('')
-    setOpen(false)
-    alert(`Hashes added! Tx: ${hash}`)
-  } catch (err: any) {
-    alert(err?.message || 'Tx failed')
   }
-}
 
+  async function handleAddHashes() {
+    try {
+      const raw = pairsInput.trim()
+      let list: string[] = raw.startsWith('[')
+        ? JSON.parse(raw).map((h: string) => h.trim())
+        : raw.split('\n').map((l) => l.trim()).filter(Boolean)
+
+      const hashes = list.map((item) => {
+        const cleaned = item.replace(/^[,"\[\]\s]+|[,"\[\]\s]+$/g, '').toLowerCase()
+        if (cleaned.startsWith('0x') && cleaned.length === 66) return cleaned as `0x${string}`
+        const [code, uri] = item.split(',').map((s) => s.trim())
+        if (!code || !uri) throw new Error(`Bad line: “${item}”`)
+        return keccak256(encodePacked(['string', 'string'], [code, uri]))
+      })
+
+      const tx = await writeContractAsync({
+        address: addr,
+        abi: nftAbi,
+        functionName: 'addValidHashes',
+        args: [hashes],
+      })
+
+      setPairsInput('')
+      setOpen(false)
+      alert(`✅ Hashes added. Tx: ${tx}`)
+    } catch (err: any) {
+      alert(err.message || 'Tx failed')
+    }
+  }
 
   return (
-    <li className="border rounded p-4">
-      <div className="flex items-center justify-between">
-        <div>
-    <h3 className="font-medium">
-  {name ?? '…'} ({symbol ?? '…'})
-</h3>
-<p className="text-sm text-gray-600">
-  Address: <span className="font-mono text-xs">{addr}</span>
-</p>
-<p className="text-sm text-gray-600">
-  Price: {price ? formatEther(price as bigint) : '…'} ETH
-</p>
-
+    <li className="bg-white p-5 rounded-xl shadow-sm border space-y-3">
+      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+        <div className="space-y-1">
+          <h3 className="text-lg font-semibold text-gray-800">
+            {name ?? '…'} <span className="text-gray-500">({symbol ?? '…'})</span>
+          </h3>
+          <p className="text-sm text-gray-500 break-all">
+            <span className="font-medium">Address:</span> {addr}
+          </p>
+          <p className="text-sm text-gray-500">
+            <span className="font-medium">Price:</span> {price ? formatEther(price as bigint) : '…'} ETH
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <a href={`https://sepolia.etherscan.io/address/${addr}`} target="_blank" rel="noreferrer" className="underline text-sm">
-            View
+
+        <div className="flex flex-wrap gap-2">
+          <a
+            href={`https://sepolia.etherscan.io/address/${addr}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-600 hover:underline text-sm font-medium"
+          >
+            View on Etherscan
           </a>
           {isOwner && (
-            <button onClick={() => setOpen((v) => !v)} className="text-sm bg-gray-200 px-3 py-1 rounded">
-              {open ? 'Cancel' : 'Add Hashes'}
-            </button>
+            <>
+              <button
+                onClick={() => setOpen(!open)}
+                className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200"
+              >
+                {open ? 'Cancel' : 'Add Hashes'}
+              </button>
+              <button
+                onClick={handleAddToFrontend}
+                disabled={pushing}
+                className="text-sm px-3 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {pushing ? 'Sending…' : 'Add to Frontend'}
+              </button>
+            </>
           )}
         </div>
       </div>
 
       {open && isOwner && (
-        <div className="mt-3 space-y-2">
+        <div className="pt-2">
           <textarea
             rows={4}
             value={pairsInput}
             onChange={(e) => setPairsInput(e.target.value)}
-            placeholder={'generate hashes and paste them here'}
-            className="w-full border p-2 rounded text-sm"
+            placeholder="Paste hash array or code,uri pairs here"
+            className="w-full border rounded p-3 text-sm font-mono bg-gray-50"
           />
-          <button
-            onClick={handleAddHashes}
-            disabled={isPending}
-            className="px-4 py-2 bg-black text-white rounded disabled:opacity-50"
-          >
-            {isPending ? 'Submitting…' : 'Submit Hashes'}
-          </button>
+          <div className="text-right mt-2">
+            <button
+              onClick={handleAddHashes}
+              disabled={isPending}
+              className="px-5 py-2 bg-black text-white text-sm rounded hover:bg-gray-900 disabled:opacity-50"
+            >
+              {isPending ? 'Submitting…' : 'Submit Hashes'}
+            </button>
+          </div>
         </div>
       )}
     </li>
@@ -337,12 +429,15 @@ async function handleAddHashes() {
 }
 
 function MyCollections({ addresses, viewer }: { addresses: string[]; viewer: string }) {
-  if (!addresses.length) return <p>No collections yet.</p>
+  if (!addresses.length)
+    return <p className="text-gray-500 text-sm mt-4">No collections deployed yet.</p>
+
   return (
-    <ul className="space-y-4">
+    <ul className="space-y-6">
       {addresses.map((addr) => (
         <CollectionRow key={addr} addr={addr as `0x${string}`} viewer={viewer} />
       ))}
     </ul>
   )
 }
+
