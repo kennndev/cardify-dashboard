@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabaseAdmin'
 
-type Context = { params: { address: string } }
-
 /* ───────── GET /api/collections/[address] ───────── */
 export async function GET(
   _req: NextRequest,
-  { params }: Context,
+  { params }: { params: { address: string } },   // ← literal
 ) {
   const addr = params.address.toLowerCase()
 
@@ -29,7 +27,7 @@ export async function GET(
 /* ───────── PUT /api/collections/[address] ───────── */
 export async function PUT(
   req: NextRequest,
-  { params }: Context,
+  { params }: { params: { address: string } },   // ← same here
 ) {
   const { cid, owner } = await req.json()
 
