@@ -1,13 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabaseAdmin'
+import { NextResponse } from 'next/server'
+import { supabase }    from '@/lib/supabaseAdmin'
 
-/* ───────── GET /api/collections/[address] ───────── */
-export async function GET(req: NextRequest) {
-  const addr = req.nextUrl.pathname.split('/').pop()?.toLowerCase()
+/* ───── GET /api/collections/[address] ───── */
+export async function GET(
+  _req: Request,
+  { params }: { params: { address: string } },   //  ❌ <- remove this type
+) {}
 
-  if (!addr) {
-    return NextResponse.json({ error: 'Missing address' }, { status: 400 })
-  }
+/* becomes */
+
+export async function GET(
+  _req: Request,
+  { params }: any,                                // or leave un‑typed
+) {
+  const addr = params.address.toLowerCase()
 
   const { data, error } = await supabase
     .from('collections')
@@ -15,42 +21,38 @@ export async function GET(req: NextRequest) {
     .eq('address', addr)
     .single()
 
-  if (error) {
+  if (error)
     return NextResponse.json(
       { error: error.message },
       { status: error.code === 'PGRST116' ? 404 : 400 },
     )
-  }
 
   return NextResponse.json({ cid: data.cid })
 }
 
-/* ───────── PUT /api/collections/[address] ───────── */
-export async function PUT(req: NextRequest) {
-  const addr = req.nextUrl.pathname.split('/').pop()?.toLowerCase()
+/* ───── PUT /api/collections/[address] ───── */
+export async function PUT(
+  req: Request,
+  { params }: any,                                //  ← same change
+) {
   const { cid, owner } = await req.json()
 
-  if (!cid || !owner || !addr) {
-    return NextResponse.json(
-      { error: 'cid, owner or address missing' },
-      { status: 400 },
-    )
-  }
+  if (!cid || !owner)
+    return NextResponse.json({ error: 'cid or owner missing' }, { status: 400 })
 
   const { error } = await supabase
     .from('collections')
     .upsert(
       {
-        address: addr,
+        address: params.address.toLowerCase(),
         cid,
-        owner: owner.toLowerCase(),
+        owner  : owner.toLowerCase(),
       },
       { onConflict: 'address' },
     )
 
-  if (error) {
+  if (error)
     return NextResponse.json({ error: error.message }, { status: 400 })
-  }
 
   return NextResponse.json({ ok: true })
 }
