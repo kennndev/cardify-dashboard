@@ -9,7 +9,7 @@ import {
   useAccount,
   usePublicClient,
 } from 'wagmi'
-import { parseEther, formatEther, keccak256, toBytes, encodePacked, parseEventLogs } from 'viem'
+import { parseEther, formatEther, keccak256, encodePacked, parseEventLogs } from 'viem'
 import Link from 'next/link'
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -305,6 +305,7 @@ function CollectionRow({ addr, viewer }: CollectionRowProps) {
   const [open, setOpen] = useState(false)
   const [pairsInput, setPairsInput] = useState('')
   const { writeContractAsync, isPending } = useWriteContract()
+  const addrLc = addr.toLowerCase();   
 
 async function handleAddToFrontend() {
     try {
