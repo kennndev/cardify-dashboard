@@ -314,11 +314,11 @@ function CollectionRow({ addr, viewer }: CollectionRowProps) {
       const { cid } = await res.json()
       if (!cid) throw new Error('No CID saved for this collection')
 
-      const fe = await fetch('https://cardifyy.vercel.app/api/import-collection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: addr.toLowerCase(), cid }),
-      })
+     const fe = await fetch(`/api/collections/${addr.toLowerCase()}/activate`, {
+   method : 'PUT',
+   headers: { 'Content-Type': 'application/json' },
+   body   : JSON.stringify({ cid }),
+ });
 
       if (!fe.ok) throw new Error((await fe.json()).error || 'Frontend rejected')
 
