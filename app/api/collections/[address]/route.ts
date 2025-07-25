@@ -1,62 +1,59 @@
-import { supabase } from '@/lib/supabaseAdmin';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabaseAdmin'
 
-/* ──────────────────────────────────────────────────────────────
-   GET  /api/collections/:address
-   →  { cid } | 404
-   ──────────────────────────────────────────────────────────────*/
+type Context = { params: { address: string } }
+
+/* ───────── GET /api/collections/[address] ───────── */
 export async function GET(
-  _req: Request,
-  { params }: { params: { address: string } },
+  _req: NextRequest,
+  { params }: Context,
 ) {
-  /* normalise to lowercase ‑ the PK is stored that way */
-  const addr = params.address.toLowerCase();
+  const addr = params.address.toLowerCase()
 
   const { data, error } = await supabase
     .from('collections')
     .select('cid')
     .eq('address', addr)
-    .single();                           // want exactly one row
+    .single()
 
-  if (error)
+  if (error) {
     return NextResponse.json(
       { error: error.message },
-      { status: error.code === 'PGRST116' ? 404 : 400 }, // 116 = no rows
-    );
+      { status: error.code === 'PGRST116' ? 404 : 400 },
+    )
+  }
 
-  return NextResponse.json({ cid: data.cid });
+  return NextResponse.json({ cid: data.cid })
 }
 
-/* ──────────────────────────────────────────────────────────────
-   PUT  /api/collections/:address
-   body → { cid, owner }
-   Upsert (insert‑or‑update) the row keyed by address
-   ──────────────────────────────────────────────────────────────*/
+/* ───────── PUT /api/collections/[address] ───────── */
 export async function PUT(
-  req: Request,
-  { params }: { params: { address: string } },
+  req: NextRequest,
+  { params }: Context,
 ) {
-  const { cid, owner } = await req.json();
+  const { cid, owner } = await req.json()
 
-  if (!cid || !owner)
+  if (!cid || !owner) {
     return NextResponse.json(
       { error: 'cid or owner missing' },
       { status: 400 },
-    );
+    )
+  }
 
   const { error } = await supabase
     .from('collections')
     .upsert(
       {
-        address : params.address.toLowerCase(), // PK stored lowercase
+        address : params.address.toLowerCase(),
         cid,
         owner   : owner.toLowerCase(),
       },
-      { onConflict: 'address' },               // “insert‑or‑update”
-    );
+      { onConflict: 'address' },
+    )
 
-  if (error)
-    return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true })
 }
