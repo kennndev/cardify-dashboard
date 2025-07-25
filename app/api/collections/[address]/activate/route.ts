@@ -1,26 +1,23 @@
-import { NextResponse, NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
-/* PUT body { cid }  → marks this row active, clears all others */
-export async function PUT(req: NextRequest, { params }: { params: { address: string } }) {
-  const { cid } = await req.json();
-  const address = params.address.toLowerCase();
+type Ctx = { params: Promise<{ address: string }> };
 
+export async function PUT(req: NextRequest, { params }: Ctx) {
+  const { address } = await params;             // 👈 await
+  const { cid } = await req.json();
   if (!cid)
     return NextResponse.json({ error: 'cid missing' }, { status: 400 });
 
-  /* ❶ deactivate any previously‑active row */
-  await supabase
-    .from('collections')
-    .update({ active: false })
-    .eq('active', true);
+  /* 1️⃣  deactivate previous active row */
+  await supabase.from('collections').update({ active: false }).eq('active', true);
 
-  /* ❷ upsert the new active row */
+  /* 2️⃣  upsert this row as active */
   const { error } = await supabase
     .from('collections')
-    .upsert({ address, cid, active: true });
+    .upsert({ address: address.toLowerCase(), cid, active: true });
 
   if (error)
     return NextResponse.json({ error: error.message }, { status: 400 });
