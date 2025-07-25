@@ -10,45 +10,25 @@ const pinataJWT = process.env.NEXT_PUBLIC_PINATA_JWT!
 type Combined = { code: string; uri: string; hash: string }
 
 export default function GenerateHashesTab() {
-  /* ───────── local state ───────── */
   const [images, setImages] = useState<File[]>([])
   const [passes, setPasses] = useState('')
-
-  /** keeps whatever the user is typing */
   const [addressInput, setAddressInput] = useState('')
-  /** only set when `addressInput` is a 42‑char 0x string */
-  const [selectedAddress, setSelectedAddress] =
-    useState<`0x${string}` | undefined>(undefined)
-
+  const [selectedAddress, setSelectedAddress] = useState<`0x${string}` | undefined>(undefined)
   const [hashesOutput, setHashesOutput] = useState<string[]>([])
   const [combinedOutput, setCombinedOutput] = useState<Combined[]>([])
   const [status, setStatus] = useState('')
   const [metaCID, setMetaCID] = useState<string | null>(null)
 
-  /* ───────── sync typed value → validated address ───────── */
   useEffect(() => {
     const v = addressInput.trim()
-    if (v.startsWith('0x') && v.length === 42) {
-      setSelectedAddress(v as `0x${string}`)
-    } else {
-      setSelectedAddress(undefined)
-    }
+    setSelectedAddress(v.startsWith('0x') && v.length === 42 ? (v as `0x${string}`) : undefined)
   }, [addressInput])
 
-  /* ───────── on‑chain look‑ups ───────── */
   const nameResult = useReadContract(
     selectedAddress
       ? {
           address: selectedAddress,
-          abi: [
-            {
-              name: 'name',
-              type: 'function',
-              stateMutability: 'view',
-              inputs: [],
-              outputs: [{ type: 'string' }],
-            },
-          ],
+          abi: [{ name: 'name', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] }],
           functionName: 'name',
         }
       : undefined,
@@ -57,24 +37,15 @@ export default function GenerateHashesTab() {
     selectedAddress
       ? {
           address: selectedAddress,
-          abi: [
-            {
-              name: 'symbol',
-              type: 'function',
-              stateMutability: 'view',
-              inputs: [],
-              outputs: [{ type: 'string' }],
-            },
-          ],
+          abi: [{ name: 'symbol', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] }],
           functionName: 'symbol',
         }
       : undefined,
   )
 
-  const name = nameResult.data
+  const name  = nameResult.data
   const symbol = symbolResult.data
 
-  /* ───────── helpers ───────── */
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) setImages(Array.from(e.target.files))
   }
@@ -83,74 +54,53 @@ export default function GenerateHashesTab() {
     if (!images.length || !passes.trim()) return alert('Upload images and enter passes')
     if (!selectedAddress) return alert('Enter a valid 0x address (42 chars)')
 
-    const passList = passes
-      .trim()
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)
-
+    const passList = passes.trim().split('\n').map(l => l.trim()).filter(Boolean)
     if (passList.length !== images.length) return alert('Passes and images count mismatch')
 
     try {
-      /* 1️⃣ Upload images */
       setStatus('Uploading images…')
       const imgCIDs: string[] = []
-
       for (const file of images) {
         const fd = new FormData()
         fd.append('file', file, file.name)
-
         const { data } = await axios.post('https://api.pinata.cloud/pinning/pinFileToIPFS', fd, {
           headers: { Authorization: `Bearer ${pinataJWT}` },
         })
         imgCIDs.push(`ipfs://${data.IpfsHash}`)
       }
 
-      /* 2️⃣ Build & upload metadata folder */
       setStatus('Uploading metadata…')
       const folder = 'metadata'
       const metaFD = new FormData()
-
       passList.forEach((code, i) => {
-        const meta = {
-          name: `${name} #${i + 1}`,
-          description: `Claimed with ${code}`,
-          image: imgCIDs[i],
-        }
-        metaFD.append(
-          'file',
-          new Blob([JSON.stringify(meta)], { type: 'application/json' }),
-          `${folder}/${i}.json`,
-        )
+        const meta = { name: `${name} #${i + 1}`, description: `Claimed with ${code}`, image: imgCIDs[i] }
+        metaFD.append('file', new Blob([JSON.stringify(meta)], { type: 'application/json' }), `${folder}/${i}.json`)
       })
-
       metaFD.append('pinataMetadata', JSON.stringify({ name: 'cardify‑metadata‑folder' }))
-      metaFD.append('pinataOptions', JSON.stringify({ wrapWithDirectory: true }))
+      metaFD.append('pinataOptions',  JSON.stringify({ wrapWithDirectory: true }))
 
-      const metaRes = await axios.post('https://api.pinata.cloud/pinning/pinFileToIPFS', metaFD, {
+      const metaRes  = await axios.post('https://api.pinata.cloud/pinning/pinFileToIPFS', metaFD, {
         headers: { Authorization: `Bearer ${pinataJWT}` },
       })
-
       const cid: string = metaRes.data.IpfsHash
       setMetaCID(cid)
 
-      /* 3️⃣ Generate hashes + combined list */
+      await fetch(`/api/collections/${selectedAddress.toLowerCase()}`, {
+        method : 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify({ cid, owner: selectedAddress.toLowerCase() }),
+      })
+
       setStatus('Generating hashes…')
       const hashes = passList.map((code, i) =>
-        keccak256(
-          encodePacked(['string', 'string'], [code, `ipfs://${cid}/metadata/${i}.json`]),
-        ),
+        keccak256(encodePacked(['string', 'string'], [code, `ipfs://${cid}/metadata/${i}.json`])),
       )
-
       setHashesOutput(hashes)
-
-      const combined = passList.map<Combined>((code, i) => ({
+      setCombinedOutput(passList.map((code, i) => ({
         code,
         uri: `ipfs://${cid}/metadata/${i}.json`,
-        hash: hashes[i],
-      }))
-      setCombinedOutput(combined)
-
+        hash: hashes[i]
+      })))
       setStatus('✅ Done – copy what you need')
     } catch (err: any) {
       console.error(err)
@@ -158,70 +108,85 @@ export default function GenerateHashesTab() {
     }
   }
 
-  /* ───────── UI ───────── */
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Generate Hashes</h2>
+    <div className="max-w-3xl mx-auto px-4 py-6 space-y-6 bg-white shadow rounded-lg">
+      <h2 className="text-2xl font-bold text-center text-gray-800">🎯 Generate Hashes for Your NFT Collection</h2>
 
-      {/* Address selector */}
-      <label className="block font-medium">NFT Collection address</label>
-      <input
-        className="w-full p-2 border rounded"
-        placeholder="0x…"
-        value={addressInput}
-        onChange={(e) => setAddressInput(e.target.value)}
-      />
+      <div className="space-y-2">
+        <label className="block font-medium">NFT Collection Address</label>
+        <input
+          className="w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="0x…"
+          value={addressInput}
+          onChange={(e) => setAddressInput(e.target.value)}
+        />
+        {name && symbol && (
+          <p className="text-sm text-green-700">
+            Loaded Collection: <b>{name}</b> ({symbol})
+          </p>
+        )}
+      </div>
 
-      {name && symbol && (
-        <p className="text-sm text-gray-600">
-          Loaded → <b>{name}</b> ({symbol})
-        </p>
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="block font-medium">Upload Images</label>
+          <input
+            type="file"
+            multiple
+            accept="image/*"
+            className="w-full"
+            onChange={handleImageUpload}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="block font-medium">Pass Codes (one per line)</label>
+          <textarea
+            className="w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            rows={5}
+            value={passes}
+            onChange={(e) => setPasses(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="text-center">
+        <button
+          onClick={handleGenerate}
+          className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow"
+        >
+          🚀 Generate & Upload
+        </button>
+      </div>
+
+      {status && (
+        <div className="text-sm text-center font-medium text-blue-600">
+          {status}
+        </div>
       )}
 
-      {/* File + pass inputs */}
-      <div>
-        <label className="block font-medium">Images</label>
-        <input type="file" multiple accept="image/*" onChange={handleImageUpload} />
-      </div>
-
-      <div>
-        <label className="block font-medium">Pass Codes (one per line)</label>
-        <textarea
-          className="w-full border p-2 rounded"
-          rows={5}
-          value={passes}
-          onChange={(e) => setPasses(e.target.value)}
-        />
-      </div>
-
-      <button onClick={handleGenerate} className="px-4 py-2 bg-black text-white rounded">
-        Generate &amp; Upload
-      </button>
-
-      {status && <p className="text-sm text-blue-600">{status}</p>}
-
       {metaCID && (
-        <p className="text-sm text-green-700">
-          Metadata root CID: <code className="bg-gray-100 px-1 rounded">{metaCID}</code>
-        </p>
+        <div className="text-sm text-center text-green-700">
+          ✅ Metadata root CID: <code className="bg-gray-100 px-2 py-1 rounded">{metaCID}</code>
+        </div>
       )}
 
       {hashesOutput.length > 0 && (
-        <>
-          <h3 className="font-semibold mt-4">Hashes (for addValidHashes)</h3>
-          <pre className="whitespace-pre-wrap break-words border p-2 bg-gray-50 rounded">
+        <div>
+          <h3 className="font-semibold text-lg mt-6 mb-2">🧮 Hashes (for `addValidHashes`)</h3>
+          <pre className="whitespace-pre-wrap break-words border p-3 bg-gray-50 rounded-md text-sm overflow-x-auto">
             {JSON.stringify(hashesOutput, null, 2)}
           </pre>
-        </>
+        </div>
       )}
 
       {combinedOutput.length > 0 && (
-        <>
-          <h3 className="font-semibold mt-4">Code / URI / Hash</h3>
-          <pre className="whitespace-pre-wrap break-words border p-2 bg-gray-50 rounded">
+        <div>
+          <h3 className="font-semibold text-lg mt-6 mb-2">📦 Code / URI / Hash</h3>
+          <pre className="whitespace-pre-wrap break-words border p-3 bg-gray-50 rounded-md text-sm overflow-x-auto">
             {JSON.stringify(combinedOutput, null, 2)}
           </pre>
-        </>
+        </div>
       )}
     </div>
   )
