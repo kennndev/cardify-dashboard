@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabaseAdmin'
 
 /* ───────── GET /api/collections/[address] ───────── */
 export async function GET(
-  _req: NextRequest,
-  { params }: { params: { address: string } },   // ← literal
+  _req: Request,                                // ← use Request
+  { params }: { params: { address: string } },
 ) {
   const addr = params.address.toLowerCase()
 
@@ -26,8 +26,8 @@ export async function GET(
 
 /* ───────── PUT /api/collections/[address] ───────── */
 export async function PUT(
-  req: NextRequest,
-  { params }: { params: { address: string } },   // ← same here
+  req: Request,                                 // ← use Request
+  { params }: { params: { address: string } },
 ) {
   const { cid, owner } = await req.json()
 
