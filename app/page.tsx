@@ -306,25 +306,43 @@ function CollectionRow({ addr, viewer }: CollectionRowProps) {
   const [pairsInput, setPairsInput] = useState('')
   const { writeContractAsync, isPending } = useWriteContract()
 
-  async function handleAddToFrontend() {
+async function handleAddToFrontend() {
     try {
       setPushing(true)
-      const res = await fetch(`/api/collections/${addr.toLowerCase()}`)
+
+      /* 1️⃣  Fetch CID for this collection */
+      const res = await fetch(`/api/collections/${addrLc}`)
       if (!res.ok) throw new Error(await res.text())
       const { cid } = await res.json()
       if (!cid) throw new Error('No CID saved for this collection')
 
-     const fe = await fetch(`/api/collections/${addr.toLowerCase()}/activate`, {
-   method : 'PUT',
-   headers: { 'Content-Type': 'application/json' },
-   body   : JSON.stringify({ cid }),
- });
+      /* 2️⃣  Try activating – if row missing, create then retry */
+      let act = await fetch(`/api/collections/${addrLc}/activate`, {
+        method :'PUT',
+        headers:{ 'Content-Type':'application/json' },
+        body   : JSON.stringify({ cid }),
+      })
+      if (act.status === 404) {                       // row doesn’t exist
+        await fetch('/api/collections', {             // create row
+          method :'POST',
+          body   : JSON.stringify({
+            address: addrLc,
+            owner  : viewer.toLowerCase(),            // so owner ≠ null
+          }),
+        })
+        act = await fetch(`/api/collections/${addrLc}/activate`, {
+          method :'PUT',
+          headers:{ 'Content-Type':'application/json' },
+          body   : JSON.stringify({ cid }),
+        })
+      }
 
-      if (!fe.ok) throw new Error((await fe.json()).error || 'Frontend rejected')
+      if (!act.ok)
+        throw new Error((await act.json()).error || 'Activation failed')
 
-      alert('✅ Collection sent to frontend')
-    } catch (err: any) {
-      alert(err.message)
+      alert('✅ Collection activated for frontend')
+    } catch (e:any) {
+      alert(e.message || 'Failed')
     } finally {
       setPushing(false)
     }
