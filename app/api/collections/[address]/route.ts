@@ -1,12 +1,13 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabaseAdmin'
 
 /* ───────── GET /api/collections/[address] ───────── */
-export async function GET(
-  _req: Request,                                // ← use Request
-  { params }: { params: { address: string } },
-) {
-  const addr = params.address.toLowerCase()
+export async function GET(req: NextRequest) {
+  const addr = req.nextUrl.pathname.split('/').pop()?.toLowerCase()
+
+  if (!addr) {
+    return NextResponse.json({ error: 'Missing address' }, { status: 400 })
+  }
 
   const { data, error } = await supabase
     .from('collections')
@@ -25,15 +26,13 @@ export async function GET(
 }
 
 /* ───────── PUT /api/collections/[address] ───────── */
-export async function PUT(
-  req: Request,                                 // ← use Request
-  { params }: { params: { address: string } },
-) {
+export async function PUT(req: NextRequest) {
+  const addr = req.nextUrl.pathname.split('/').pop()?.toLowerCase()
   const { cid, owner } = await req.json()
 
-  if (!cid || !owner) {
+  if (!cid || !owner || !addr) {
     return NextResponse.json(
-      { error: 'cid or owner missing' },
+      { error: 'cid, owner or address missing' },
       { status: 400 },
     )
   }
@@ -42,9 +41,9 @@ export async function PUT(
     .from('collections')
     .upsert(
       {
-        address : params.address.toLowerCase(),
+        address: addr,
         cid,
-        owner   : owner.toLowerCase(),
+        owner: owner.toLowerCase(),
       },
       { onConflict: 'address' },
     )
