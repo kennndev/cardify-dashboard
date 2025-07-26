@@ -29,10 +29,20 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Providers>
-          {children}
-        </Providers>
-      </body>
+<Providers
+  config={{
+    loginMethods: ['google', 'wallet'],
+    embeddedWallets: {
+       createOnLogin: 'users-without-wallets',
+    },
+  }}
+>
+  {children}
+</Providers>
+
+
+
+        </body>
     </html>
   );
 }
