@@ -6,6 +6,8 @@ import { usePrivy } from "@privy-io/react-auth"
 import { useReadContract, useWriteContract, useWalletClient, useAccount, usePublicClient } from "wagmi"
 import { parseEther, formatEther, keccak256, encodePacked, parseEventLogs } from "viem"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import useSWR from 'swr';
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Factory contract
@@ -532,18 +534,109 @@ function MyCollections({ addresses, viewer }: { addresses: string[]; viewer: str
   )
 }
 
+
+function CodeGenerator() {
+  const [count, setCount] = useState(10)
+  const [output, setOutput] = useState<string[]>([])
+  const [copied, setCopied] = useState(false)
+
+  function generateRandomCode(length: number) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    let result = ''
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return result
+  }
+
+  function encodeIndex(index: number): string {
+    return index.toString(36).padStart(2, '0') // base36: 0 → '00', 99 → '2r'
+  }
+
+  function generateCodes() {
+    const results: string[] = []
+    for (let i = 0; i < count; i++) {
+      const randomPart = generateRandomCode(6)
+      const indexPart = encodeIndex(i)
+      const finalCode = randomPart + indexPart
+      results.push(finalCode)
+    }
+    setOutput(results)
+  }
+
+  function handleCopyAll() {
+    const text = output.join('\n')
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      <h2 className="text-2xl font-bold text-center text-violet-700">🎲 Code Generator</h2>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 justify-center">
+        <input
+          type="number"
+          placeholder="Number of codes (e.g. 100)"
+          value={count}
+          onChange={(e) => setCount(Number(e.target.value))}
+          className="p-3 border rounded-xl w-full"
+        />
+
+        <button
+          onClick={generateCodes}
+          className="bg-violet-600 hover:bg-violet-500 text-white font-semibold py-3 px-6 rounded-xl"
+        >
+          Generate
+        </button>
+      </div>
+
+      {output.length > 0 && (
+        <div className="mt-6 space-y-2">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold">Generated Codes:</h3>
+            <button
+              onClick={handleCopyAll}
+              className="text-sm text-violet-600 hover:text-violet-800 transition"
+              title="Copy all codes"
+            >
+              {copied ? '✅' : '📋'} Copy All
+            </button>
+          </div>
+
+          <textarea
+            readOnly
+            value={output.join('\n')}
+            rows={10}
+            className="w-full p-4 border rounded-xl font-mono text-sm"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+
 // ────────────────────────────────────────────────────────────────────────────────
 // Dashboard Page
 // ────────────────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { ready, authenticated, user, login, logout } = usePrivy()
-  const [tab, setTab] = useState<"deploy" | "mine">("deploy")
-  const [collections, setCollections] = useState<string[]>([])
-  const [txHash, setTxHash] = useState<string | null>(null)
 
-  // factory query
+  const router = useRouter();
+  const { ready, authenticated, user, login, logout } = usePrivy();
+
+  const [tab, setTab] = useState<"deploy" | "mine" | "generate">("deploy");
+  const [collections, setCollections] = useState<string[]>([]);
+  const [txHash, setTxHash] = useState<string | null>(null);
+    const email = (user?.google?.email ?? user?.email?.address ?? '').toLowerCase();
+
+  /* factory query */
   const userAddress =
-    authenticated && user?.wallet?.address?.startsWith("0x") ? (user.wallet.address as `0x${string}`) : undefined
+    authenticated && user?.wallet?.address?.startsWith("0x")
+      ? (user.wallet.address as `0x${string}`)
+      : undefined;
 
   const { data: collectionsData, refetch } = useReadContract(
     userAddress
@@ -559,13 +652,42 @@ export default function DashboardPage() {
           functionName: "getUserCollections",
           args: ["0x0000000000000000000000000000000000000000"],
         },
-  )
+  );
 
   useEffect(() => {
-    if (collectionsData) setCollections(collectionsData as string[])
-  }, [collectionsData])
+    if (collectionsData) setCollections(collectionsData as string[]);
+  }, [collectionsData]);
 
-  if (!ready) return null
+const fetcher = (url: string) => fetch(url).then(r => r.json());
+  const { data: roles, isLoading: rolesLoading } = useSWR(
+    authenticated ? '/api/roles' : null,
+    fetcher
+  );
+
+  /* keep React happy until both Privy and SWR are done */
+  if (!ready || (authenticated && rolesLoading)) {
+    return <div className="min-h-screen flex items-center justify-center">Loading…</div>;
+  }
+
+  /* email must exist in dashboard_roles */
+  const allowed =
+    authenticated &&
+    roles?.some((r: { email: string }) => r.email.toLowerCase() === email);
+
+  if (!allowed) {
+    if (authenticated) logout();      // signed‑in but not on the list
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center space-y-6">
+        <h1 className="text-2xl font-semibold">Restricted dashboard</h1>
+        <button
+          onClick={login}
+          className="px-8 py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-2xl"
+        >
+          Sign in with Google
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 relative overflow-hidden">
@@ -600,12 +722,21 @@ export default function DashboardPage() {
               <span className="relative z-10">Connect Wallet</span>
             </button>
           ) : (
-            <button
-              onClick={logout}
-              className="px-8 py-3 bg-white/60 text-gray-700 rounded-2xl font-semibold hover:bg-white transition-all duration-300 border border-white/20 backdrop-blur-sm hover:shadow-lg transform hover:-translate-y-0.5"
-            >
-              Logout
-            </button>
+      <div className="flex items-center space-x-4">
+  <Link
+    href="/access"
+    className="px-6 py-2 rounded-2xl bg-white/60 text-gray-800 font-semibold hover:bg-white transition duration-300 border border-white/20 backdrop-blur-sm hover:shadow"
+  >
+    Access
+  </Link>
+  <button
+    onClick={logout}
+    className="px-8 py-3 bg-white/60 text-gray-700 rounded-2xl font-semibold hover:bg-white transition-all duration-300 border border-white/20 backdrop-blur-sm hover:shadow-lg transform hover:-translate-y-0.5"
+  >
+    Logout
+  </button>
+</div>
+
           )}
         </div>
       </header>
@@ -623,6 +754,14 @@ export default function DashboardPage() {
                   refetch()
                 }}
               />
+                 <Tab
+                label="Code Generator"
+                active={tab === "generate"}
+                onClick={() => {
+                  setTab("generate")
+                  refetch()
+                }}
+              />
             </div>
             <Link href="/generateHashes" className="ml-auto">
               <button className="px-8 py-3 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-2xl font-semibold hover:from-orange-400 hover:to-pink-400 transition-all duration-300 shadow-xl shadow-orange-500/25 hover:shadow-2xl hover:shadow-orange-500/40 transform hover:-translate-y-1 flex items-center space-x-3 relative overflow-hidden group">
@@ -637,16 +776,18 @@ export default function DashboardPage() {
             <div className="absolute -inset-4 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 rounded-3xl blur opacity-20"></div>
             <div className="relative bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden">
               <div className="p-12">
-                {tab === "deploy" && (
-                  <DeployForm
-                    onDeployed={(hash) => {
-                      setTxHash(hash)
-                      refetch()
-                    }}
-                  />
-                )}
-                {tab === "mine" && <MyCollections addresses={collections} viewer={user!.wallet!.address!} />}
-              </div>
+  {tab === "deploy" && (
+    <DeployForm
+      onDeployed={(hash) => {
+        setTxHash(hash)
+        refetch()
+      }}
+    />
+  )}
+  {tab === "mine" && <MyCollections addresses={collections} viewer={user!.wallet!.address!} />}
+  {tab === "generate" && <CodeGenerator />}
+</div>
+
             </div>
           </div>
 
