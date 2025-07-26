@@ -29,12 +29,25 @@ export async function POST(req: NextRequest) {
 
 /* DELETE  /api/roles  { id }  (super_admin only) --------------------------- */
 export async function DELETE(req: NextRequest) {
-  const { id } = await req.json();
-  const { error } = await supabase
-    .from('dashboard_roles')
-    .delete()
-    .eq('id', id);
+  try {
+    const { id } = await req.json();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({}, { status: 204 });
+    if (!id) {
+      return NextResponse.json({ error: 'Missing ID in request body' }, { status: 400 });
+    }
+
+    const { error } = await supabase
+      .from('dashboard_roles')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ success: true }, { status: 200 });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 }
+
