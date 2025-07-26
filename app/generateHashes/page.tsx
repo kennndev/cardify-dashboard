@@ -120,7 +120,6 @@ export default function GenerateHashesTab() {
     }
   }
 
-
   
 return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 relative overflow-hidden">
@@ -308,7 +307,6 @@ return (
     </div>
   </div>
 )}
-
 
               {/* Combined Output */}
               {combinedOutput.length > 0 && (
