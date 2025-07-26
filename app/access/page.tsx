@@ -108,7 +108,6 @@ export default function AccessPage() {
 
       {/* List */}
       <ul className="space-y-2">
-        {console.log('Rendering list:', list)}
         {list.map((u) => (
           <li
             key={u.id}
