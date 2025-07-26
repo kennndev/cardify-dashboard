@@ -3,7 +3,7 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import { usePrivy } from "@privy-io/react-auth"
-import { useReadContract, useWriteContract, useWalletClient, useAccount, usePublicClient } from "wagmi"
+import { useReadContract, useWriteContract, useWalletClient, useAccount, usePublicClient, useConnect } from "wagmi"
 import { parseEther, formatEther, keccak256, encodePacked, parseEventLogs } from "viem"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -106,6 +106,19 @@ function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
   const { writeContractAsync } = useWriteContract()
   const publicClient = usePublicClient()
 
+
+  /* NEW – wallet connector */
+  const { connect, connectors, isPending: isConnecting } = useConnect()
+
+  /* open connector modal / silently connect first available */
+  const connectWallet = async () => {
+    try {
+      const preferred = connectors[0]
+      await connect({ connector: preferred })
+    } catch (e) {
+      alert("Could not connect wallet")
+    }
+  }
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!isConnected || !walletClient || !publicClient) {
@@ -159,109 +172,131 @@ function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="text-center space-y-4">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-3xl shadow-lg shadow-violet-500/25 mb-4">
-          <span className="text-2xl">🚀</span>
-        </div>
-        <h2 className="text-3xl font-bold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">
-          Deploy New Collection
-        </h2>
-        <p className="text-gray-600 max-w-md mx-auto">
-          Create your NFT collection with custom parameters and start your journey
-        </p>
+  <div className="space-y-8">
+    {/* ───────── title ───────── */}
+    <div className="text-center space-y-4">
+      <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-3xl shadow-lg shadow-violet-500/25 mb-4">
+        <span className="text-2xl">🚀</span>
       </div>
+      <h2 className="text-3xl font-bold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">
+        Deploy New Collection
+      </h2>
+      <p className="text-gray-600 max-w-md mx-auto">
+        Create your NFT collection with custom parameters and start your journey
+      </p>
+    </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-3 group">
-            <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
-              <span className="w-2 h-2 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"></span>
-              <span>Collection Name</span>
-            </label>
-            <input
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My Awesome Collection"
-              className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
-            />
-          </div>
-
-          <div className="space-y-3 group">
-            <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
-              <span className="w-2 h-2 bg-gradient-to-r from-purple-500 to-fuchsia-500 rounded-full"></span>
-              <span>Symbol</span>
-            </label>
-            <input
-              required
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              placeholder="MAC"
-              className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
-            />
-          </div>
-
-          <div className="space-y-3 group">
-            <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
-              <span className="w-2 h-2 bg-gradient-to-r from-fuchsia-500 to-pink-500 rounded-full"></span>
-              <span>Mint Price (ETH)</span>
-            </label>
-            <input
-              required
-              type="number"
-              step="0.0001"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder="0.001"
-              className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
-            />
-          </div>
-
-          <div className="space-y-3 group">
-            <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
-              <span className="w-2 h-2 bg-gradient-to-r from-pink-500 to-rose-500 rounded-full"></span>
-              <span>Royalty Recipient</span>
-            </label>
-            <input
-              required
-              value={royaltyRecipient}
-              onChange={(e) => setRoyaltyRecipient(e.target.value)}
-              placeholder="0x..."
-              className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
-            />
-          </div>
-        </div>
-
+    {/* ───────── form ───────── */}
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* collection name */}
         <div className="space-y-3 group">
           <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
-            <span className="w-2 h-2 bg-gradient-to-r from-rose-500 to-orange-500 rounded-full"></span>
-            <span>Royalty Percentage (basis points)</span>
+            <span className="w-2 h-2 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full" />
+            <span>Collection Name</span>
           </label>
           <input
             required
-            type="number"
-            value={royaltyPct}
-            onChange={(e) => setRoyaltyPct(e.target.value)}
-            placeholder="250 (2.5%)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="My Awesome Collection"
             className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
           />
         </div>
 
+        {/* symbol */}
+        <div className="space-y-3 group">
+          <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+            <span className="w-2 h-2 bg-gradient-to-r from-purple-500 to-fuchsia-500 rounded-full" />
+            <span>Symbol</span>
+          </label>
+          <input
+            required
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+            placeholder="MAC"
+            className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
+          />
+        </div>
+
+        {/* mint price */}
+        <div className="space-y-3 group">
+          <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+            <span className="w-2 h-2 bg-gradient-to-r from-fuchsia-500 to-pink-500 rounded-full" />
+            <span>Mint Price (ETH)</span>
+          </label>
+          <input
+            required
+            type="number"
+            step="0.0001"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            placeholder="0.001"
+            className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
+          />
+        </div>
+
+        {/* royalty recipient */}
+        <div className="space-y-3 group">
+          <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+            <span className="w-2 h-2 bg-gradient-to-r from-pink-500 to-rose-500 rounded-full" />
+            <span>Royalty Recipient</span>
+          </label>
+          <input
+            required
+            value={royaltyRecipient}
+            onChange={(e) => setRoyaltyRecipient(e.target.value)}
+            placeholder="0x..."
+            className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
+          />
+        </div>
+      </div>
+
+      {/* royalty percentage */}
+      <div className="space-y-3 group">
+        <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+          <span className="w-2 h-2 bg-gradient-to-r from-rose-500 to-orange-500 rounded-full" />
+          <span>Royalty Percentage (basis points)</span>
+        </label>
+        <input
+          required
+          type="number"
+          value={royaltyPct}
+          onChange={(e) => setRoyaltyPct(e.target.value)}
+          placeholder="250 (2.5%)"
+          className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
+        />
+      </div>
+
+      {/* ───────── action button ───────── */}
+      {isConnected ? (
         <button
           type="submit"
-          disabled={!isConnected}
-          className="w-full px-8 py-5 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed hover:from-violet-500 hover:via-purple-500 hover:to-fuchsia-500 transition-all duration-300 shadow-xl shadow-violet-500/25 hover:shadow-2xl hover:shadow-violet-500/40 transform hover:-translate-y-1 relative overflow-hidden group"
+          className="w-full px-8 py-5 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg hover:from-violet-500 hover:via-purple-500 hover:to-fuchsia-500 transition-all duration-300 shadow-xl shadow-violet-500/25 hover:shadow-2xl hover:shadow-violet-500/40 transform hover:-translate-y-1 relative overflow-hidden group"
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+          <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           <span className="relative z-10 flex items-center justify-center space-x-3">
-            <span>{isConnected ? "Deploy Collection" : "Connect Wallet"}</span>
+            <span>Deploy Collection</span>
             <span className="text-xl">✨</span>
           </span>
         </button>
-      </form>
-    </div>
-  )
+      ) : (
+        <button
+          type="button"
+          onClick={connectWallet}
+          className="w-full px-8 py-5 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg hover:from-violet-500 hover:via-purple-500 hover:to-fuchsia-500 transition-all duration-300 shadow-xl shadow-violet-500/25 hover:shadow-2xl hover:shadow-violet-500/40 transform hover:-translate-y-1 relative overflow-hidden group"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+          <span className="relative z-10 flex items-center justify-center space-x-3">
+            <span>Connect Wallet</span>
+            <span className="text-xl">🔗</span>
+          </span>
+        </button>
+      )}
+    </form>
+  </div>
+)
+
 }
 
 interface CollectionRowProps {
