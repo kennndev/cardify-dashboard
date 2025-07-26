@@ -7,53 +7,64 @@ export default function AccessPage() {
     { id: number; email: string; role: 'super_admin' | 'admin' }[]
   >([]);
   const [email, setEmail] = useState('');
-  const [role, setRole]   = useState<'admin' | 'super_admin'>('admin');
+  const [role, setRole] = useState<'admin' | 'super_admin'>('admin');
 
+  // Load roles from Supabase
   async function load() {
     const res = await fetch('/api/roles');
-    setList(await res.json());
+    const data = await res.json();
+    console.log('Loaded roles:', data);
+    setList(data);
   }
 
-async function add() {
-  const res = await fetch('/api/roles', {
-    method: 'POST',
-    body: JSON.stringify({ email, role }),
-    headers: { 'Content-Type': 'application/json' },
-  });
+  // Add a new role
+  async function add() {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      alert('Email is required');
+      return;
+    }
 
-  const result = await res.json();
-  console.log('ADD result:', result);
+    const res = await fetch('/api/roles', {
+      method: 'POST',
+      body: JSON.stringify({ email: trimmedEmail, role }),
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-  if (!res.ok) {
-    alert('Add failed: ' + result.error);
-    return;
+    const result = await res.json();
+    console.log('ADD result:', result);
+
+    if (!res.ok) {
+      alert('Add failed: ' + result.error);
+      return;
+    }
+
+    // Append new entry to list
+    setList((prev) => [...prev, result]);
+    setEmail('');
   }
 
-  setEmail('');
-  load();
-}
+  // Remove an entry by ID
+  async function remove(id: number) {
+    console.log('Removing ID:', id);
 
+    const res = await fetch('/api/roles', {
+      method: 'DELETE',
+      body: JSON.stringify({ id }),
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-async function remove(id: number) {
-  console.log('Removing ID:', id);
+    const result = await res.json();
+    console.log('Delete result:', result);
 
-  const res = await fetch('/api/roles', {
-    method: 'DELETE',
-    body: JSON.stringify({ id }),
-    headers: { 'Content-Type': 'application/json' },
-  });
+    if (!res.ok) {
+      alert('Failed to delete: ' + result.error);
+      return;
+    }
 
-  const result = await res.json();
-  console.log('Delete result:', result);
-
-  if (!res.ok) {
-    alert('Failed to delete: ' + result.error);
-    return;
+    // Remove from list without refetching
+    setList((prev) => prev.filter((user) => user.id !== id));
   }
-
-  load();
-}
-
 
   useEffect(() => {
     load();
@@ -61,15 +72,17 @@ async function remove(id: number) {
 
   return (
     <div className="max-w-xl mx-auto p-8 space-y-8">
-          <Link
+      {/* 🏠 Home link */}
+      <Link
         href="/"
         className="inline-block px-4 py-2 rounded-xl bg-white/80 text-purple-700 hover:bg-white transition shadow-sm"
       >
         🏠
       </Link>
 
-      <h1 className="text-3xl font-bold">Dashboard Access</h1>
+      <h1 className="text-3xl font-bold">Dashboard Access</h1>
 
+      {/* Add Form */}
       <div className="flex space-x-4">
         <input
           value={email}
@@ -93,11 +106,24 @@ async function remove(id: number) {
         </button>
       </div>
 
+      {/* List */}
       <ul className="space-y-2">
+        {console.log('Rendering list:', list)}
         {list.map((u) => (
-          <li key={u.id} className="flex justify-between bg-white/70 p-3 rounded-xl">
-            <span>{u.email} ({u.role})</span>
-            <button onClick={() => remove(u.id)} title="Remove">🗑️</button>
+          <li
+            key={u.id}
+            className="flex justify-between items-center bg-white/70 p-3 rounded-xl"
+          >
+            <span>
+              {u.email} ({u.role})
+            </span>
+            <button
+              onClick={() => remove(u.id)}
+              title="Remove"
+              className="hover:text-red-600 transition"
+            >
+              🗑️
+            </button>
           </li>
         ))}
       </ul>
