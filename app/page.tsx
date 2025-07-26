@@ -1,290 +1,264 @@
-'use client'
+"use client"
 
-import React, { useState, useEffect } from 'react'
-import { usePrivy } from '@privy-io/react-auth'
-import {
-  useReadContract,
-  useWriteContract,
-  useWalletClient,
-  useAccount,
-  usePublicClient,
-} from 'wagmi'
-import { parseEther, formatEther, keccak256, encodePacked, parseEventLogs } from 'viem'
-import Link from 'next/link'
+import type React from "react"
+import { useState, useEffect } from "react"
+import { usePrivy } from "@privy-io/react-auth"
+import { useReadContract, useWriteContract, useWalletClient, useAccount, usePublicClient } from "wagmi"
+import { parseEther, formatEther, keccak256, encodePacked, parseEventLogs } from "viem"
+import Link from "next/link"
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Factory contract
 // ────────────────────────────────────────────────────────────────────────────────
 const factoryAddress = process.env.NEXT_PUBLIC_FACTORY_ADDRESS as `0x${string}`
+
 const factoryAbi = [
   /* ─── functions ─── */
   {
-    name: 'createCollection',
-    type: 'function',
-    stateMutability: 'nonpayable',
+    name: "createCollection",
+    type: "function",
+    stateMutability: "nonpayable",
     inputs: [
-      { name: 'name',               type: 'string'  },
-      { name: 'symbol',             type: 'string'  },
-      { name: 'price',              type: 'uint256' },
-      { name: 'royaltyRecipient',   type: 'address' },
-      { name: 'royaltyPercentage',  type: 'uint96'  },
+      { name: "name", type: "string" },
+      { name: "symbol", type: "string" },
+      { name: "price", type: "uint256" },
+      { name: "royaltyRecipient", type: "address" },
+      { name: "royaltyPercentage", type: "uint96" },
     ],
-    outputs: [{ name: 'collectionAddress', type: 'address' }],
+    outputs: [{ name: "collectionAddress", type: "address" }],
   },
   {
-    name: 'getUserCollections',
-    type: 'function',
-    stateMutability: 'view',
-    inputs : [{ name: 'user', type: 'address' }],
-    outputs: [{ type: 'address[]' }],
+    name: "getUserCollections",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ type: "address[]" }],
   },
-
   /* ─── event we forgot ─── */
   {
     anonymous: false,
-    name : 'CollectionDeployed',
-    type : 'event',
+    name: "CollectionDeployed",
+    type: "event",
     inputs: [
-      { indexed: true,  name: 'creator',           type: 'address' },
-      { indexed: false, name: 'collectionAddress', type: 'address' },
-      { indexed: false, name: 'name',              type: 'string'  },
-      { indexed: false, name: 'symbol',            type: 'string'  },
-      { indexed: false, name: 'mintPrice',         type: 'uint256' },
-      { indexed: false, name: 'royaltyRecipient',  type: 'address' },
-      { indexed: false, name: 'royaltyPercentage', type: 'uint96'  },
+      { indexed: true, name: "creator", type: "address" },
+      { indexed: false, name: "collectionAddress", type: "address" },
+      { indexed: false, name: "name", type: "string" },
+      { indexed: false, name: "symbol", type: "string" },
+      { indexed: false, name: "mintPrice", type: "uint256" },
+      { indexed: false, name: "royaltyRecipient", type: "address" },
+      { indexed: false, name: "royaltyPercentage", type: "uint96" },
     ],
   },
 ] as const
 
-
 // Minimal ABI for CardifyNFT metadata + admin
 const nftAbi = [
-  { name: 'name', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
-  { name: 'symbol', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
-  { name: 'mintPrice', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { name: "name", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { name: "symbol", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { name: "mintPrice", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   {
-    name: 'addValidHashes',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [{ name: 'hashes', type: 'bytes32[]' }],
+    name: "addValidHashes",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "hashes", type: "bytes32[]" }],
     outputs: [],
   },
   {
-    name: 'owner',
-    type: 'function',
-    stateMutability: 'view',
+    name: "owner",
+    type: "function",
+    stateMutability: "view",
     inputs: [],
-    outputs: [{ type: 'address' }],
+    outputs: [{ type: "address" }],
   },
 ] as const
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Dashboard Page
-// ────────────────────────────────────────────────────────────────────────────────
-export default function DashboardPage() {
-  const { ready, authenticated, user, login, logout } = usePrivy()
-  const [tab, setTab] = useState<'deploy' | 'mine'>('deploy')
-  const [collections, setCollections] = useState<string[]>([])
-  const [txHash, setTxHash] = useState<string | null>(null)
-
-  // factory query
-const userAddress =
-  authenticated && user?.wallet?.address?.startsWith('0x')
-    ? (user.wallet.address as `0x${string}`)
-    : undefined
-
-const { data: collectionsData, refetch } = useReadContract(
-  userAddress
-    ? {
-        address: factoryAddress,
-        abi: factoryAbi,
-        functionName: 'getUserCollections',
-        args: [userAddress],
-      }
-    : { address: factoryAddress, abi: factoryAbi, functionName: 'getUserCollections', args: ['0x0000000000000000000000000000000000000000'] }
-)
-
-
-  useEffect(() => {
-    if (collectionsData) setCollections(collectionsData as string[])
-  }, [collectionsData])
-
-  if (!ready) return null
-
-  return (
-    <div className="min-h-screen bg-gray-50 text-gray-800">
-      {/* Header */}
-      <header className="bg-white shadow p-4 flex justify-between">
-        <h1 className="font-semibold text-lg">Cardify Collections</h1>
-        {!authenticated ? (
-          <button className="px-4 py-2 rounded bg-black text-white" onClick={login}>
-            Connect
-          </button>
-        ) : (
-          <button className="px-4 py-2 rounded bg-gray-200" onClick={logout}>
-            Logout
-          </button>
-        )}
-      </header>
-
-      {authenticated && (
-        <main className="max-w-4xl mx-auto p-6">
-          {/* Tabs */}
-          <div className="flex space-x-4 mb-6">
-            <Tab label="Deploy" active={tab === 'deploy'} onClick={() => setTab('deploy')} />
-            <Tab
-              label="My Collections"
-              active={tab === 'mine'}
-              onClick={() => {
-                setTab('mine')
-                refetch()
-              }}
-            />
-                     <Link href="/generateHashes">
-    <button className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
-      Generate Hashes
-    </button>
-  </Link>
-          </div>
-
-          {tab === 'deploy' && <DeployForm onDeployed={(hash) => { setTxHash(hash); refetch() }} />}
-          {tab === 'mine' && <MyCollections addresses={collections} viewer={user!.wallet!.address!} />}
-  
-
-          {txHash && (
-            <p className="mt-4 text-sm">
-              Tx submitted:&nbsp;
-              <a
-                className="underline"
-                href={`https://sepolia.etherscan.io/tx/${txHash}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {txHash.slice(0, 10)}…
-              </a>
-            </p>
-          )}
-        </main>
-      )}
-    </div>
-  )
-}
-
-// ────────────────────────────────────────────────────────────────────────────────
-// Components
-// ────────────────────────────────────────────────────────────────────────────────
 function Tab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 rounded transition ${active ? 'bg-black text-white' : 'bg-gray-200 text-gray-700'}`}
+      className={`px-6 py-3 rounded-2xl font-semibold transition-all duration-300 relative overflow-hidden group ${
+        active
+          ? "bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white shadow-lg shadow-violet-500/25 transform scale-105"
+          : "text-gray-600 hover:text-gray-800 hover:bg-white/60 backdrop-blur-sm border border-white/20"
+      }`}
     >
-      {label}
+      {active && (
+        <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 opacity-75 animate-pulse"></div>
+      )}
+      <span className="relative z-10">{label}</span>
     </button>
   )
 }
 
 function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
- const [name,             setName]   = useState('')
-  const [symbol,           setSymbol] = useState('')
-  const [price,            setPrice]  = useState('')
-  const [royaltyRecipient, setRoyaltyRecipient] = useState('')
-  const [royaltyPct,       setRoyaltyPct] = useState('')
+  const [name, setName] = useState("")
+  const [symbol, setSymbol] = useState("")
+  const [price, setPrice] = useState("")
+  const [royaltyRecipient, setRoyaltyRecipient] = useState("")
+  const [royaltyPct, setRoyaltyPct] = useState("")
 
   /* ───── hooks ───── */
-  const { user }                  = usePrivy()              // gives Supabase user_id
-  const { isConnected }           = useAccount()
-  const { data: walletClient }    = useWalletClient()
-  const { writeContractAsync }    = useWriteContract()
-  const  publicClient             = usePublicClient()
+  const { user } = usePrivy() // gives Supabase user_id
+  const { isConnected } = useAccount()
+  const { data: walletClient } = useWalletClient()
+  const { writeContractAsync } = useWriteContract()
+  const publicClient = usePublicClient()
 
-  
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!isConnected || !walletClient || !publicClient) {
+      alert("Wallet or client not ready")
+      return
+    }
 
-async function handleSubmit(e: React.FormEvent) {
-  e.preventDefault()
-  if (!isConnected || !walletClient || !publicClient) {
-    alert('Wallet or client not ready')
-    return
+    /* 1️⃣  send tx ------------------------------------------------------------ */
+    const txHash = await writeContractAsync({
+      account: walletClient.account,
+      address: factoryAddress,
+      abi: factoryAbi,
+      functionName: "createCollection",
+      args: [
+        name,
+        symbol,
+        BigInt(parseEther(price || "0")),
+        royaltyRecipient as `0x${string}`,
+        BigInt(royaltyPct || "0"),
+      ],
+    })
+
+    /* 2️⃣  wait for inclusion ------------------------------------------------- */
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
+
+    /* 3️⃣  extract the CollectionDeployed event ------------------------------ */
+    const events = parseEventLogs({
+      abi: factoryAbi, // now includes CollectionDeployed
+      logs: receipt.logs,
+      eventName: "CollectionDeployed",
+    })
+
+    const collectionAddress = events[0].args.collectionAddress as `0x${string}`
+
+    /* 4️⃣  save in Supabase --------------------------------------------------- */
+    await fetch("/api/collections", {
+      method: "POST",
+      body: JSON.stringify({
+        address: collectionAddress.toLowerCase(),
+        owner: walletClient.account.address.toLowerCase(),
+      }),
+    })
+
+    /* 5️⃣  notify parent + reset form ---------------------------------------- */
+    onDeployed(txHash)
+    setName("")
+    setSymbol("")
+    setPrice("")
+    setRoyaltyRecipient("")
+    setRoyaltyPct("")
   }
 
-  /* 1️⃣  send tx ------------------------------------------------------------ */
-  const txHash = await writeContractAsync({
-    account      : walletClient.account,
-    address      : factoryAddress,
-    abi          : factoryAbi,
-    functionName : 'createCollection',
-    args: [
-      name,
-      symbol,
-      BigInt(parseEther(price || '0')),
-      royaltyRecipient as `0x${string}`,
-      BigInt(royaltyPct || '0'),
-    ],
-  })
-
-  /* 2️⃣  wait for inclusion ------------------------------------------------- */
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
-
-  /* 3️⃣  extract the CollectionDeployed event ------------------------------ */
-  const events = parseEventLogs({
-    abi       : factoryAbi,                 // now includes CollectionDeployed
-    logs      : receipt.logs,
-    eventName : 'CollectionDeployed',
-  })
-
-  const collectionAddress =
-    events[0].args.collectionAddress as `0x${string}`
-
-  /* 4️⃣  save in Supabase --------------------------------------------------- */
-  await fetch('/api/collections', {
-    method : 'POST',
-    body   : JSON.stringify({
-      address : collectionAddress.toLowerCase(),
-      owner   : walletClient.account.address.toLowerCase(),
-    }),
-  })
-
-  /* 5️⃣  notify parent + reset form ---------------------------------------- */
-  onDeployed(txHash)
-  setName('')
-  setSymbol('')
-  setPrice('')
-  setRoyaltyRecipient('')
-  setRoyaltyPct('')
-}
-
-
-
-return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <input  required value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Name"  className="p-3 border rounded" />
-
-        <input  required value={symbol}
-                onChange={(e) => setSymbol(e.target.value)}
-                placeholder="Symbol" className="p-3 border rounded" />
-
-        <input  required type="number" step="0.0001" value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                placeholder="Mint Price (ETH)" className="p-3 border rounded" />
-
-        <input  required value={royaltyRecipient}
-                onChange={(e) => setRoyaltyRecipient(e.target.value)}
-                placeholder="Royalty Recipient" className="p-3 border rounded" />
-
-        <input  required type="number" value={royaltyPct}
-                onChange={(e) => setRoyaltyPct(e.target.value)}
-                placeholder="Royalty % (e.g. 250)" className="p-3 border rounded col-span-2" />
+  return (
+    <div className="space-y-8">
+      <div className="text-center space-y-4">
+        <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-3xl shadow-lg shadow-violet-500/25 mb-4">
+          <span className="text-2xl">🚀</span>
+        </div>
+        <h2 className="text-3xl font-bold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">
+          Deploy New Collection
+        </h2>
+        <p className="text-gray-600 max-w-md mx-auto">
+          Create your NFT collection with custom parameters and start your journey
+        </p>
       </div>
 
-      <button type="submit"
-              disabled={!isConnected}
-              className="px-6 py-3 bg-black text-white rounded w-full disabled:opacity-50">
-        {isConnected ? 'Deploy Collection' : 'Connect Wallet'}
-      </button>
-    </form>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-3 group">
+            <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+              <span className="w-2 h-2 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"></span>
+              <span>Collection Name</span>
+            </label>
+            <input
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="My Awesome Collection"
+              className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
+            />
+          </div>
+
+          <div className="space-y-3 group">
+            <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+              <span className="w-2 h-2 bg-gradient-to-r from-purple-500 to-fuchsia-500 rounded-full"></span>
+              <span>Symbol</span>
+            </label>
+            <input
+              required
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value)}
+              placeholder="MAC"
+              className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
+            />
+          </div>
+
+          <div className="space-y-3 group">
+            <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+              <span className="w-2 h-2 bg-gradient-to-r from-fuchsia-500 to-pink-500 rounded-full"></span>
+              <span>Mint Price (ETH)</span>
+            </label>
+            <input
+              required
+              type="number"
+              step="0.0001"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="0.001"
+              className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
+            />
+          </div>
+
+          <div className="space-y-3 group">
+            <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+              <span className="w-2 h-2 bg-gradient-to-r from-pink-500 to-rose-500 rounded-full"></span>
+              <span>Royalty Recipient</span>
+            </label>
+            <input
+              required
+              value={royaltyRecipient}
+              onChange={(e) => setRoyaltyRecipient(e.target.value)}
+              placeholder="0x..."
+              className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-3 group">
+          <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+            <span className="w-2 h-2 bg-gradient-to-r from-rose-500 to-orange-500 rounded-full"></span>
+            <span>Royalty Percentage (basis points)</span>
+          </label>
+          <input
+            required
+            type="number"
+            value={royaltyPct}
+            onChange={(e) => setRoyaltyPct(e.target.value)}
+            placeholder="250 (2.5%)"
+            className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={!isConnected}
+          className="w-full px-8 py-5 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white rounded-2xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed hover:from-violet-500 hover:via-purple-500 hover:to-fuchsia-500 transition-all duration-300 shadow-xl shadow-violet-500/25 hover:shadow-2xl hover:shadow-violet-500/40 transform hover:-translate-y-1 relative overflow-hidden group"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+          <span className="relative z-10 flex items-center justify-center space-x-3">
+            <span>{isConnected ? "Deploy Collection" : "Connect Wallet"}</span>
+            <span className="text-xl">✨</span>
+          </span>
+        </button>
+      </form>
+    </div>
   )
 }
 
@@ -295,55 +269,60 @@ interface CollectionRowProps {
 
 function CollectionRow({ addr, viewer }: CollectionRowProps) {
   const publicClient = usePublicClient()
-  const { data: name } = useReadContract({ address: addr, abi: nftAbi, functionName: 'name' })
-  const { data: symbol } = useReadContract({ address: addr, abi: nftAbi, functionName: 'symbol' })
-  const { data: price } = useReadContract({ address: addr, abi: nftAbi, functionName: 'mintPrice' })
-  const { data: owner } = useReadContract({ address: addr, abi: nftAbi, functionName: 'owner' })
-  const isOwner = owner?.toLowerCase() === viewer.toLowerCase()
+  const { data: name } = useReadContract({ address: addr, abi: nftAbi, functionName: "name" })
+  const { data: symbol } = useReadContract({ address: addr, abi: nftAbi, functionName: "symbol" })
+  const { data: price } = useReadContract({ address: addr, abi: nftAbi, functionName: "mintPrice" })
+  const { data: owner } = useReadContract({ address: addr, abi: nftAbi, functionName: "owner" })
 
+  const isOwner = owner?.toLowerCase() === viewer.toLowerCase()
   const [pushing, setPushing] = useState(false)
   const [open, setOpen] = useState(false)
-  const [pairsInput, setPairsInput] = useState('')
-  const { writeContractAsync, isPending } = useWriteContract()
-  const addrLc = addr.toLowerCase();   
+  const [pairsInput, setPairsInput] = useState("")
+  const [copied, setCopied] = useState(false)
 
-async function handleAddToFrontend() {
+
+  const { writeContractAsync, isPending } = useWriteContract()
+  const addrLc = addr.toLowerCase()
+
+  async function handleAddToFrontend() {
     try {
       setPushing(true)
-
-      /* 1️⃣  Fetch CID for this collection */
+      /* 1️⃣  Fetch CID for this collection */
       const res = await fetch(`/api/collections/${addrLc}`)
       if (!res.ok) throw new Error(await res.text())
       const { cid } = await res.json()
-      if (!cid) throw new Error('No CID saved for this collection')
+      if (!cid) throw new Error("No CID saved for this collection")
 
-      /* 2️⃣  Try activating – if row missing, create then retry */
+      /* 2️⃣  Try activating – if row missing, create then retry */
       let act = await fetch(`/api/collections/${addrLc}/activate`, {
-        method :'PUT',
-        headers:{ 'Content-Type':'application/json' },
-        body   : JSON.stringify({ cid }),
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cid }),
       })
-      if (act.status === 404) {                       // row doesn’t exist
-        await fetch('/api/collections', {             // create row
-          method :'POST',
-          body   : JSON.stringify({
+
+      if (act.status === 404) {
+        // row doesn't exist
+        await fetch("/api/collections", {
+          // create row
+          method: "POST",
+          body: JSON.stringify({
             address: addrLc,
-            owner  : viewer.toLowerCase(),            // so owner ≠ null
+            owner: viewer.toLowerCase(),
+            // so owner ≠ null
           }),
         })
         act = await fetch(`/api/collections/${addrLc}/activate`, {
-          method :'PUT',
-          headers:{ 'Content-Type':'application/json' },
-          body   : JSON.stringify({ cid }),
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cid }),
         })
       }
 
-      if (!act.ok)
-        throw new Error((await act.json()).error || 'Activation failed')
+      if (!act.ok) throw new Error((await act.json()).error || "Activation failed")
 
-      alert('✅ Collection activated for frontend')
-    } catch (e:any) {
-      alert(e.message || 'Failed')
+      alert("✅ Collection activated for frontend")
+    } catch (e: any) {
+      alert(e.message || "Failed")
     } finally {
       setPushing(false)
     }
@@ -352,111 +331,346 @@ async function handleAddToFrontend() {
   async function handleAddHashes() {
     try {
       const raw = pairsInput.trim()
-      let list: string[] = raw.startsWith('[')
+      const list: string[] = raw.startsWith("[")
         ? JSON.parse(raw).map((h: string) => h.trim())
-        : raw.split('\n').map((l) => l.trim()).filter(Boolean)
+        : raw
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean)
 
       const hashes = list.map((item) => {
-        const cleaned = item.replace(/^[,"\[\]\s]+|[,"\[\]\s]+$/g, '').toLowerCase()
-        if (cleaned.startsWith('0x') && cleaned.length === 66) return cleaned as `0x${string}`
-        const [code, uri] = item.split(',').map((s) => s.trim())
-        if (!code || !uri) throw new Error(`Bad line: “${item}”`)
-        return keccak256(encodePacked(['string', 'string'], [code, uri]))
+        const cleaned = item.replace(/^[,"[\]\s]+|[,"[\]\s]+$/g, "").toLowerCase()
+        if (cleaned.startsWith("0x") && cleaned.length === 66) return cleaned as `0x${string}`
+        const [code, uri] = item.split(",").map((s) => s.trim())
+        if (!code || !uri) throw new Error(`Bad line: "${item}"`)
+        return keccak256(encodePacked(["string", "string"], [code, uri]))
       })
 
       const tx = await writeContractAsync({
         address: addr,
         abi: nftAbi,
-        functionName: 'addValidHashes',
+        functionName: "addValidHashes",
         args: [hashes],
       })
 
-      setPairsInput('')
+      setPairsInput("")
       setOpen(false)
       alert(`✅ Hashes added. Tx: ${tx}`)
     } catch (err: any) {
-      alert(err.message || 'Tx failed')
+      alert(err.message || "Tx failed")
     }
   }
 
-  return (
-    <li className="bg-white p-5 rounded-xl shadow-sm border space-y-3">
-      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
-        <div className="space-y-1">
-          <h3 className="text-lg font-semibold text-gray-800">
-            {name ?? '…'} <span className="text-gray-500">({symbol ?? '…'})</span>
-          </h3>
-          <p className="text-sm text-gray-500 break-all">
-            <span className="font-medium">Address:</span> {addr}
-          </p>
-          <p className="text-sm text-gray-500">
-            <span className="font-medium">Price:</span> {price ? formatEther(price as bigint) : '…'} ETH
-          </p>
-        </div>
+  const gradients = [
+    "from-violet-500 to-purple-600",
+    "from-purple-500 to-fuchsia-600",
+    "from-fuchsia-500 to-pink-600",
+    "from-pink-500 to-rose-600",
+    "from-rose-500 to-orange-500",
+  ]
+  const gradient = gradients[Math.abs(addr.charCodeAt(0)) % gradients.length]
 
-        <div className="flex flex-wrap gap-2">
-          <a
-            href={`https://sepolia.etherscan.io/address/${addr}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-blue-600 hover:underline text-sm font-medium"
-          >
-            View on Etherscan
-          </a>
-          {isOwner && (
-            <>
-              <button
-                onClick={() => setOpen(!open)}
-                className="text-sm px-3 py-1 rounded bg-gray-100 hover:bg-gray-200"
+  return (
+    <div className="group relative">
+      {/* Floating background decoration */}
+      <div className="absolute -inset-1 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 rounded-3xl blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200 animate-pulse"></div>
+
+      <div className="relative bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl border border-white/20 overflow-hidden hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2">
+        <div className="p-8 space-y-6">
+          <div className="flex flex-col lg:flex-row justify-between lg:items-start gap-6">
+            <div className="space-y-4 flex-1">
+              <div className="flex items-center space-x-4">
+                <div
+                  className={`w-16 h-16 bg-gradient-to-br ${gradient} rounded-2xl flex items-center justify-center shadow-lg transform rotate-3 group-hover:rotate-6 transition-transform duration-300`}
+                >
+                  <span className="text-white text-2xl font-bold transform -rotate-3 group-hover:-rotate-6 transition-transform duration-300">
+                    {(name ?? "C")[0].toUpperCase()}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
+                    {name ?? "Loading..."}
+                  </h3>
+                  <p className="text-gray-500 font-semibold text-lg">{symbol ?? "..."}</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center space-x-3 p-3 bg-gray-50/50 rounded-xl backdrop-blur-sm">
+                  <div className="w-2 h-2 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"></div>
+                  <span className="text-sm font-semibold text-gray-600">Address:</span>
+<div className="flex items-center space-x-2">
+  <code className="text-xs bg-white/60 px-3 py-1.5 rounded-lg text-gray-700 font-mono border border-gray-200/50">
+    {addr}
+  </code>
+  <button
+    onClick={() => {
+      navigator.clipboard.writeText(addr)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }}
+    title="Copy Address"
+    className="text-gray-500 hover:text-gray-700 text-sm transition"
+  >
+    {copied ? "✅" : "📋"}
+  </button>
+</div>
+
+
+                </div>
+                <div className="flex items-center space-x-3 p-3 bg-gray-50/50 rounded-xl backdrop-blur-sm">
+                  <div className="w-2 h-2 bg-gradient-to-r from-fuchsia-500 to-pink-500 rounded-full"></div>
+                  <span className="text-sm font-semibold text-gray-600">Price:</span>
+                  <span className="bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white px-3 py-1.5 rounded-lg font-bold text-sm shadow-md">
+                    {price ? formatEther(price as bigint) : "..."} ETH
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <a
+href={`https://sepolia.basescan.org/address/${addr}`}
+                target="_blank"
+                rel="noreferrer"
+                className="px-5 py-2.5 bg-white/60 text-gray-700 rounded-xl hover:bg-white transition-all duration-300 text-sm font-semibold border border-gray-200/50 backdrop-blur-sm hover:shadow-lg transform hover:-translate-y-0.5"
               >
-                {open ? 'Cancel' : 'Add Hashes'}
-              </button>
-              <button
-                onClick={handleAddToFrontend}
-                disabled={pushing}
-                className="text-sm px-3 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {pushing ? 'Sending…' : 'Add to Frontend'}
-              </button>
-            </>
+                View on Base
+              </a>
+              {isOwner && (
+                <>
+                  <button
+                    onClick={() => setOpen(!open)}
+                    className="px-5 py-2.5 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-xl hover:from-amber-300 hover:to-orange-400 transition-all duration-300 text-sm font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                  >
+                    {open ? "Cancel" : "Add Hashes"}
+                  </button>
+                  <button
+                    onClick={handleAddToFrontend}
+                    disabled={pushing}
+                    className="px-5 py-2.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-xl hover:from-violet-500 hover:to-fuchsia-500 transition-all duration-300 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                  >
+                    {pushing ? "Sending…" : "Add to Frontend"}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {open && isOwner && (
+            <div className="pt-6 border-t border-gray-200/50">
+              <div className="space-y-4">
+                <label className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+                  <span className="w-2 h-2 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"></span>
+                  <span>Hash Array or Code,URI Pairs</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={pairsInput}
+                  onChange={(e) => setPairsInput(e.target.value)}
+                  placeholder="Paste hash array or code,uri pairs here"
+                  className="w-full border-2 border-gray-200 rounded-2xl p-4 text-sm font-mono bg-white/50 backdrop-blur-sm focus:bg-white focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300"
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleAddHashes}
+                    disabled={isPending}
+                    className="px-8 py-3 bg-gradient-to-r from-gray-800 to-gray-700 text-white rounded-xl hover:from-gray-700 hover:to-gray-600 transition-all duration-300 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                  >
+                    {isPending ? "Submitting…" : "Submit Hashes"}
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
-
-      {open && isOwner && (
-        <div className="pt-2">
-          <textarea
-            rows={4}
-            value={pairsInput}
-            onChange={(e) => setPairsInput(e.target.value)}
-            placeholder="Paste hash array or code,uri pairs here"
-            className="w-full border rounded p-3 text-sm font-mono bg-gray-50"
-          />
-          <div className="text-right mt-2">
-            <button
-              onClick={handleAddHashes}
-              disabled={isPending}
-              className="px-5 py-2 bg-black text-white text-sm rounded hover:bg-gray-900 disabled:opacity-50"
-            >
-              {isPending ? 'Submitting…' : 'Submit Hashes'}
-            </button>
-          </div>
-        </div>
-      )}
-    </li>
+    </div>
   )
 }
 
 function MyCollections({ addresses, viewer }: { addresses: string[]; viewer: string }) {
-  if (!addresses.length)
-    return <p className="text-gray-500 text-sm mt-4">No collections deployed yet.</p>
+  if (!addresses.length) {
+    return (
+      <div className="text-center py-16 space-y-6">
+        <div className="relative">
+          <div className="w-24 h-24 bg-gradient-to-br from-violet-100 to-fuchsia-100 rounded-3xl flex items-center justify-center mx-auto transform rotate-3 hover:rotate-6 transition-transform duration-300">
+            <span className="text-4xl transform -rotate-3 hover:-rotate-6 transition-transform duration-300">📦</span>
+          </div>
+          <div className="absolute -inset-2 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 rounded-3xl blur opacity-20 animate-pulse"></div>
+        </div>
+        <div className="space-y-3">
+          <h3 className="text-2xl font-bold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">
+            No Collections Yet
+          </h3>
+          <p className="text-gray-600 max-w-md mx-auto">
+            Deploy your first collection to get started on your NFT journey
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <ul className="space-y-6">
-      {addresses.map((addr) => (
-        <CollectionRow key={addr} addr={addr as `0x${string}`} viewer={viewer} />
-      ))}
-    </ul>
+    <div className="space-y-8">
+      <div className="text-center space-y-4">
+        <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-3xl shadow-lg shadow-violet-500/25 mb-4">
+          <span className="text-2xl">🎨</span>
+        </div>
+        <h2 className="text-3xl font-bold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">
+          My Collections
+        </h2>
+        <p className="text-gray-600 max-w-md mx-auto">Manage your deployed NFT collections</p>
+      </div>
+
+      <div className="space-y-8">
+        {addresses.map((addr) => (
+          <CollectionRow key={addr} addr={addr as `0x${string}`} viewer={viewer} />
+        ))}
+      </div>
+    </div>
   )
 }
 
+// ────────────────────────────────────────────────────────────────────────────────
+// Dashboard Page
+// ────────────────────────────────────────────────────────────────────────────────
+export default function DashboardPage() {
+  const { ready, authenticated, user, login, logout } = usePrivy()
+  const [tab, setTab] = useState<"deploy" | "mine">("deploy")
+  const [collections, setCollections] = useState<string[]>([])
+  const [txHash, setTxHash] = useState<string | null>(null)
+
+  // factory query
+  const userAddress =
+    authenticated && user?.wallet?.address?.startsWith("0x") ? (user.wallet.address as `0x${string}`) : undefined
+
+  const { data: collectionsData, refetch } = useReadContract(
+    userAddress
+      ? {
+          address: factoryAddress,
+          abi: factoryAbi,
+          functionName: "getUserCollections",
+          args: [userAddress],
+        }
+      : {
+          address: factoryAddress,
+          abi: factoryAbi,
+          functionName: "getUserCollections",
+          args: ["0x0000000000000000000000000000000000000000"],
+        },
+  )
+
+  useEffect(() => {
+    if (collectionsData) setCollections(collectionsData as string[])
+  }, [collectionsData])
+
+  if (!ready) return null
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 relative overflow-hidden">
+      {/* Animated background elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-violet-400/20 to-fuchsia-400/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-br from-fuchsia-400/10 to-violet-400/10 rounded-full blur-3xl animate-pulse delay-500"></div>
+      </div>
+
+      <header className="relative bg-white/70 backdrop-blur-xl border-b border-white/20 sticky top-0 z-50 shadow-lg shadow-violet-500/5">
+        <div className="max-w-7xl mx-auto px-6 py-5 flex justify-between items-center">
+          <div className="flex items-center space-x-4">
+            <div className="relative">
+              <div className="w-12 h-12 bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600 rounded-2xl flex items-center justify-center shadow-lg shadow-violet-500/25 transform rotate-3 hover:rotate-6 transition-transform duration-300">
+                <span className="text-white text-xl font-bold transform -rotate-3 hover:-rotate-6 transition-transform duration-300">
+                  🎨
+                </span>
+              </div>
+              <div className="absolute -inset-1 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 rounded-2xl blur opacity-30 animate-pulse"></div>
+            </div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">
+              Cardify Collections
+            </h1>
+          </div>
+          {!authenticated ? (
+            <button
+              onClick={login}
+              className="px-8 py-3 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white rounded-2xl font-semibold hover:from-violet-500 hover:via-purple-500 hover:to-fuchsia-500 transition-all duration-300 shadow-xl shadow-violet-500/25 hover:shadow-2xl hover:shadow-violet-500/40 transform hover:-translate-y-1 relative overflow-hidden group"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <span className="relative z-10">Connect Wallet</span>
+            </button>
+          ) : (
+            <button
+              onClick={logout}
+              className="px-8 py-3 bg-white/60 text-gray-700 rounded-2xl font-semibold hover:bg-white transition-all duration-300 border border-white/20 backdrop-blur-sm hover:shadow-lg transform hover:-translate-y-0.5"
+            >
+              Logout
+            </button>
+          )}
+        </div>
+      </header>
+
+      {authenticated && (
+        <main className="relative max-w-6xl mx-auto px-6 py-12">
+          <div className="flex flex-wrap gap- mb-12 items-center">
+            <div className="flex bg-white/60 backdrop-blur-xl rounded-3xl p-2 shadow-xl border border-white/20">
+              <Tab label="Deploy" active={tab === "deploy"} onClick={() => setTab("deploy")} />
+              <Tab
+                label="My Collections"
+                active={tab === "mine"}
+                onClick={() => {
+                  setTab("mine")
+                  refetch()
+                }}
+              />
+            </div>
+            <Link href="/generateHashes" className="ml-auto">
+              <button className="px-8 py-3 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-2xl font-semibold hover:from-orange-400 hover:to-pink-400 transition-all duration-300 shadow-xl shadow-orange-500/25 hover:shadow-2xl hover:shadow-orange-500/40 transform hover:-translate-y-1 flex items-center space-x-3 relative overflow-hidden group">
+                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                <span className="relative z-10 text-xl">➕</span>
+                <span className="relative z-10">Generate Hashes</span>
+              </button>
+            </Link>
+          </div>
+
+          <div className="relative">
+            <div className="absolute -inset-4 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 rounded-3xl blur opacity-20"></div>
+            <div className="relative bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden">
+              <div className="p-12">
+                {tab === "deploy" && (
+                  <DeployForm
+                    onDeployed={(hash) => {
+                      setTxHash(hash)
+                      refetch()
+                    }}
+                  />
+                )}
+                {tab === "mine" && <MyCollections addresses={collections} viewer={user!.wallet!.address!} />}
+              </div>
+            </div>
+          </div>
+
+          {txHash && (
+            <div className="mt-8 relative">
+              <div className="absolute -inset-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur opacity-20"></div>
+              <div className="relative p-6 bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-200/50 rounded-2xl backdrop-blur-sm">
+                <p className="text-emerald-800 flex items-center space-x-3 font-semibold">
+                  <span className="text-2xl">✅</span>
+                  <span>Transaction submitted:</span>
+                  <a
+                    className="font-bold text-emerald-700 hover:text-emerald-800 underline decoration-emerald-300 hover:decoration-emerald-400 transition-colors bg-white/50 px-3 py-1 rounded-lg"
+                    href={`https://sepolia.basescan.org/tx/${txHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {txHash.slice(0, 10)}…
+                  </a>
+                </p>
+              </div>
+            </div>
+          )}
+        </main>
+      )}
+    </div>
+  )
+}
