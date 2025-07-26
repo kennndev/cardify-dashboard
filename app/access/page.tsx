@@ -14,24 +14,46 @@ export default function AccessPage() {
     setList(await res.json());
   }
 
-  async function add() {
-    await fetch('/api/roles', {
-      method: 'POST',
-      body: JSON.stringify({ email, role }),
-      headers: { 'Content-Type': 'application/json' },
-    });
-    setEmail('');
-    load();
+async function add() {
+  const res = await fetch('/api/roles', {
+    method: 'POST',
+    body: JSON.stringify({ email, role }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const result = await res.json();
+  console.log('ADD result:', result);
+
+  if (!res.ok) {
+    alert('Add failed: ' + result.error);
+    return;
   }
 
-  async function remove(id: number) {
-    await fetch('/api/roles', {
-      method: 'DELETE',
-      body: JSON.stringify({ id }),
-      headers: { 'Content-Type': 'application/json' },
-    });
-    load();
+  setEmail('');
+  load();
+}
+
+
+async function remove(id: number) {
+  console.log('Removing ID:', id);
+
+  const res = await fetch('/api/roles', {
+    method: 'DELETE',
+    body: JSON.stringify({ id }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const result = await res.json();
+  console.log('Delete result:', result);
+
+  if (!res.ok) {
+    alert('Failed to delete: ' + result.error);
+    return;
   }
+
+  load();
+}
+
 
   useEffect(() => {
     load();
@@ -39,8 +61,7 @@ export default function AccessPage() {
 
   return (
     <div className="max-w-xl mx-auto p-8 space-y-8">
-      {/* 🏠 Home Icon */}
-      <Link
+          <Link
         href="/"
         className="inline-block px-4 py-2 rounded-xl bg-white/80 text-purple-700 hover:bg-white transition shadow-sm"
       >
