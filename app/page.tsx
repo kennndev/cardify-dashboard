@@ -666,7 +666,8 @@ export default function DashboardPage() {
   const [collections, setCollections] = useState<string[]>([]);
   const [txHash, setTxHash] = useState<string | null>(null);
     const email = (user?.google?.email ?? user?.email?.address ?? '').toLowerCase();
-
+  const { isConnected, address } = useAccount()   // ←  this must be present
+  const { connect, connectors, isPending: isConnPending } = useConnect()
   /* factory query */
   const userAddress =
     authenticated && user?.wallet?.address?.startsWith("0x")
@@ -724,129 +725,154 @@ const fetcher = (url: string) => fetch(url).then(r => r.json());
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 relative overflow-hidden">
-      {/* Animated background elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-violet-400/20 to-fuchsia-400/20 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-br from-fuchsia-400/10 to-violet-400/10 rounded-full blur-3xl animate-pulse delay-500"></div>
-      </div>
-
-      <header className="relative bg-white/70 backdrop-blur-xl border-b border-white/20 sticky top-0 z-50 shadow-lg shadow-violet-500/5">
-        <div className="max-w-7xl mx-auto px-6 py-5 flex justify-between items-center">
-          <div className="flex items-center space-x-4">
-            <div className="relative">
-              <div className="w-12 h-12 bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600 rounded-2xl flex items-center justify-center shadow-lg shadow-violet-500/25 transform rotate-3 hover:rotate-6 transition-transform duration-300">
-                <span className="text-white text-xl font-bold transform -rotate-3 hover:-rotate-6 transition-transform duration-300">
-                  🎨
-                </span>
-              </div>
-              <div className="absolute -inset-1 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 rounded-2xl blur opacity-30 animate-pulse"></div>
-            </div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">
-              Cardify Collections
-            </h1>
-          </div>
-          {!authenticated ? (
-            <button
-              onClick={login}
-              className="px-8 py-3 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white rounded-2xl font-semibold hover:from-violet-500 hover:via-purple-500 hover:to-fuchsia-500 transition-all duration-300 shadow-xl shadow-violet-500/25 hover:shadow-2xl hover:shadow-violet-500/40 transform hover:-translate-y-1 relative overflow-hidden group"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-              <span className="relative z-10">Connect Wallet</span>
-            </button>
-          ) : (
-      <div className="flex items-center space-x-4">
-  <Link
-    href="/access"
-    className="px-6 py-2 rounded-2xl bg-white/60 text-gray-800 font-semibold hover:bg-white transition duration-300 border border-white/20 backdrop-blur-sm hover:shadow"
-  >
-    Access
-  </Link>
-  <button
-    onClick={logout}
-    className="px-8 py-3 bg-white/60 text-gray-700 rounded-2xl font-semibold hover:bg-white transition-all duration-300 border border-white/20 backdrop-blur-sm hover:shadow-lg transform hover:-translate-y-0.5"
-  >
-    Logout
-  </button>
-</div>
-
-          )}
-        </div>
-      </header>
-
-      {authenticated && (
-        <main className="relative max-w-6xl mx-auto px-6 py-12">
-          <div className="flex flex-wrap gap- mb-12 items-center">
-            <div className="flex bg-white/60 backdrop-blur-xl rounded-3xl p-2 shadow-xl border border-white/20">
-              <Tab label="Deploy" active={tab === "deploy"} onClick={() => setTab("deploy")} />
-              <Tab
-                label="My Collections"
-                active={tab === "mine"}
-                onClick={() => {
-                  setTab("mine")
-                  refetch()
-                }}
-              />
-                 <Tab
-                label="Code Generator"
-                active={tab === "generate"}
-                onClick={() => {
-                  setTab("generate")
-                  refetch()
-                }}
-              />
-            </div>
-            <Link href="/generateHashes" className="ml-auto">
-              <button className="px-8 py-3 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-2xl font-semibold hover:from-orange-400 hover:to-pink-400 transition-all duration-300 shadow-xl shadow-orange-500/25 hover:shadow-2xl hover:shadow-orange-500/40 transform hover:-translate-y-1 flex items-center space-x-3 relative overflow-hidden group">
-                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                <span className="relative z-10 text-xl">➕</span>
-                <span className="relative z-10">Generate Hashes</span>
-              </button>
-            </Link>
-          </div>
-
-          <div className="relative">
-            <div className="absolute -inset-4 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 rounded-3xl blur opacity-20"></div>
-            <div className="relative bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden">
-              <div className="p-12">
-  {tab === "deploy" && (
-    <DeployForm
-      onDeployed={(hash) => {
-        setTxHash(hash)
-        refetch()
-      }}
-    />
-  )}
-  {tab === "mine" && <MyCollections addresses={collections} viewer={user!.wallet!.address!} />}
-  {tab === "generate" && <CodeGenerator />}
-</div>
-
-            </div>
-          </div>
-
-          {txHash && (
-            <div className="mt-8 relative">
-              <div className="absolute -inset-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur opacity-20"></div>
-              <div className="relative p-6 bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-200/50 rounded-2xl backdrop-blur-sm">
-                <p className="text-emerald-800 flex items-center space-x-3 font-semibold">
-                  <span className="text-2xl">✅</span>
-                  <span>Transaction submitted:</span>
-                  <a
-                    className="font-bold text-emerald-700 hover:text-emerald-800 underline decoration-emerald-300 hover:decoration-emerald-400 transition-colors bg-white/50 px-3 py-1 rounded-lg"
-                    href={`https://sepolia.basescan.org/tx/${txHash}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {txHash.slice(0, 10)}…
-                  </a>
-                </p>
-              </div>
-            </div>
-          )}
-        </main>
-      )}
+ return (
+  <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 relative overflow-hidden">
+    {/* ───────── animated pastel blobs ───────── */}
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-violet-400/20 to-fuchsia-400/20 rounded-full blur-3xl animate-pulse" />
+      <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-full blur-3xl animate-pulse delay-1000" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-br from-fuchsia-400/10 to-violet-400/10 rounded-full blur-3xl animate-pulse delay-500" />
     </div>
-  )
+
+    {/* ───────── sticky header ───────── */}
+    <header className="relative bg-white/70 backdrop-blur-xl border-b border-white/20 sticky top-0 z-50 shadow-lg shadow-violet-500/5">
+      <div className="max-w-7xl mx-auto px-6 py-5 flex justify-between items-center">
+        {/* brand mark */}
+        <div className="flex items-center space-x-4">
+          <div className="relative">
+            <div className="w-12 h-12 bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600 rounded-2xl flex items-center justify-center shadow-lg shadow-violet-500/25 rotate-3 hover:rotate-6 transition-transform duration-300">
+              <span className="text-white text-xl font-bold -rotate-3 hover:-rotate-6 transition-transform duration-300">
+                🎨
+              </span>
+            </div>
+            <div className="absolute -inset-1 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 rounded-2xl blur opacity-30 animate-pulse" />
+          </div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">
+            Cardify Collections
+          </h1>
+        </div>
+
+        {/* auth / wallet controls */}
+        {!authenticated && (
+          <button
+            onClick={login}
+            className="px-8 py-3 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white rounded-2xl font-semibold"
+          >
+            Sign in with Google
+          </button>
+        )}
+
+        {authenticated && !isConnected && (
+          <button
+            onClick={connectWallet}
+            disabled={isConnPending}
+            className="px-8 py-3 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white rounded-2xl font-semibold disabled:opacity-50"
+          >
+            {isConnPending ? "Connecting…" : "Connect Wallet"}
+          </button>
+        )}
+
+        {authenticated && isConnected && (
+          <div className="flex items-center space-x-4">
+            <Link
+              href="/access"
+              className="px-6 py-2 bg-white/60 text-gray-800 font-semibold rounded-2xl border border-white/20 backdrop-blur-sm hover:bg-white transition duration-300 hover:shadow"
+            >
+              Access
+            </Link>
+            <button
+              onClick={logout}
+              className="px-8 py-3 bg-white/60 text-gray-700 rounded-2xl font-semibold border border-white/20 backdrop-blur-sm hover:bg-white transition-all duration-300 hover:shadow-lg"
+            >
+              Logout
+            </button>
+          </div>
+        )}
+      </div>
+    </header>
+
+    {/* ───────── body (visible after Google auth) ───────── */}
+    {authenticated && (
+      <main className="relative max-w-6xl mx-auto px-6 py-12">
+        {/* tabs */}
+        <div className="flex flex-wrap gap-4 mb-12 items-center">
+          <div className="flex bg-white/60 backdrop-blur-xl rounded-3xl p-2 shadow-xl border border-white/20">
+            <Tab label="Deploy" active={tab === "deploy"} onClick={() => setTab("deploy")} />
+            <Tab
+              label="My Collections"
+              active={tab === "mine"}
+              onClick={() => {
+                setTab("mine")
+                refetch()
+              }}
+            />
+            <Tab
+              label="Code Generator"
+              active={tab === "generate"}
+              onClick={() => setTab("generate")}
+            />
+          </div>
+
+          {/* shortcut to /generateHashes */}
+          <Link href="/generateHashes" className="ml-auto">
+            <button className="px-8 py-3 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-2xl font-semibold hover:from-orange-400 hover:to-pink-400 transition-all duration-300 shadow-xl shadow-orange-500/25 hover:shadow-2xl hover:shadow-orange-500/40 transform hover:-translate-y-1 flex items-center space-x-3">
+              <span className="text-xl">➕</span>
+              <span>Generate Hashes</span>
+            </button>
+          </Link>
+        </div>
+
+        {/* main card */}
+        <div className="relative">
+          <div className="absolute -inset-4 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 rounded-3xl blur opacity-20" />
+          <div className="relative bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden">
+            <div className="p-12">
+              {tab === "deploy" && (
+                <DeployForm
+                  onDeployed={(hash) => {
+                    setTxHash(hash)
+                    refetch()
+                  }}
+                />
+              )}
+
+              {tab === "mine" &&
+                (isConnected ? (
+                  <MyCollections addresses={collections} viewer={address!.toLowerCase()} />
+                ) : (
+                  <p className="text-center text-lg font-semibold">
+                    Connect a wallet to view your collections
+                  </p>
+                ))}
+
+              {tab === "generate" && <CodeGenerator />}
+            </div>
+          </div>
+        </div>
+
+        {/* tx banner */}
+        {txHash && (
+          <div className="mt-8 relative">
+            <div className="absolute -inset-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur opacity-20" />
+            <div className="relative p-6 bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-200/50 rounded-2xl backdrop-blur-sm">
+              <p className="text-emerald-800 flex items-center space-x-3 font-semibold">
+                <span className="text-2xl">✅</span>
+                <span>Transaction submitted:</span>
+                <a
+                  href={`https://sepolia.basescan.org/tx/${txHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-bold underline decoration-emerald-300 hover:decoration-emerald-400 bg-white/50 px-3 py-1 rounded-lg"
+                >
+                  {txHash.slice(0, 10)}…
+                </a>
+              </p>
+            </div>
+          </div>
+        )}
+      </main>
+    )}
+  </div>
+)
+
 }
