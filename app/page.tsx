@@ -666,29 +666,46 @@ export default function DashboardPage() {
   const [collections, setCollections] = useState<string[]>([]);
   const [txHash, setTxHash] = useState<string | null>(null);
     const email = (user?.google?.email ?? user?.email?.address ?? '').toLowerCase();
-  const { isConnected, address } = useAccount()   // ←  this must be present
   const { connect, connectors, isPending: isConnPending } = useConnect()
+// wagmi account
+const { isConnected, address } = useAccount()
+
+// pick whichever address is actually connected
+const connectedAddress = isConnected ? (address as `0x${string}`) : undefined
+
+
+  /* open connector modal / silently connect first available */
+  const connectWallet = async () => {
+    try {
+      const preferred = connectors[0]
+      await connect({ connector: preferred })
+    } catch (e) {
+      alert("Could not connect wallet")
+    }
+  }
+
   /* factory query */
   const userAddress =
     authenticated && user?.wallet?.address?.startsWith("0x")
       ? (user.wallet.address as `0x${string}`)
       : undefined;
 
-  const { data: collectionsData, refetch } = useReadContract(
-    userAddress
-      ? {
-          address: factoryAddress,
-          abi: factoryAbi,
-          functionName: "getUserCollections",
-          args: [userAddress],
-        }
-      : {
-          address: factoryAddress,
-          abi: factoryAbi,
-          functionName: "getUserCollections",
-          args: ["0x0000000000000000000000000000000000000000"],
-        },
-  );
+const { data: collectionsData, refetch } = useReadContract(
+  connectedAddress
+    ? {
+        address: factoryAddress,
+        abi: factoryAbi,
+        functionName: "getUserCollections",
+        args: [connectedAddress],
+      }
+    : {
+        address: factoryAddress,
+        abi: factoryAbi,
+        functionName: "getUserCollections",
+        args: ["0x0000000000000000000000000000000000000000"],
+      }
+);
+
 
   useEffect(() => {
     if (collectionsData) setCollections(collectionsData as string[]);
@@ -752,42 +769,29 @@ const fetcher = (url: string) => fetch(url).then(r => r.json());
           </h1>
         </div>
 
-        {/* auth / wallet controls */}
-        {!authenticated && (
-          <button
-            onClick={login}
-            className="px-8 py-3 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white rounded-2xl font-semibold"
-          >
-            Sign in with Google
-          </button>
-        )}
+{/* auth / wallet controls */}
+{!authenticated && (
+  <button onClick={login} className="btn‑gradient">Sign in with Google</button>
+)}
 
-        {authenticated && !isConnected && (
-          <button
-            onClick={connectWallet}
-            disabled={isConnPending}
-            className="px-8 py-3 bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 text-white rounded-2xl font-semibold disabled:opacity-50"
-          >
-            {isConnPending ? "Connecting…" : "Connect Wallet"}
-          </button>
-        )}
+{authenticated && !isConnected && (
+  <button
+    onClick={connectWallet}
+    disabled={isConnPending}
+    className="btn‑gradient disabled:opacity-50"
+  >
+    {isConnPending ? "Connecting…" : "Connect Wallet"}
+  </button>
+)}
 
-        {authenticated && isConnected && (
-          <div className="flex items-center space-x-4">
-            <Link
-              href="/access"
-              className="px-6 py-2 bg-white/60 text-gray-800 font-semibold rounded-2xl border border-white/20 backdrop-blur-sm hover:bg-white transition duration-300 hover:shadow"
-            >
-              Access
-            </Link>
-            <button
-              onClick={logout}
-              className="px-8 py-3 bg-white/60 text-gray-700 rounded-2xl font-semibold border border-white/20 backdrop-blur-sm hover:bg-white transition-all duration-300 hover:shadow-lg"
-            >
-              Logout
-            </button>
-          </div>
-        )}
+{authenticated && isConnected && (
+  <div className="flex items-center space-x-4">
+    <Link href="/access" className="btn‑plain">Access</Link>
+    <button onClick={logout} className="btn‑plain">Logout</button>
+  </div>
+)}
+
+
       </div>
     </header>
 
@@ -835,15 +839,15 @@ const fetcher = (url: string) => fetch(url).then(r => r.json());
                   }}
                 />
               )}
+{tab === "mine" &&
+  (isConnected ? (
+    <MyCollections addresses={collections} viewer={connectedAddress!.toLowerCase()} />
+  ) : (
+    <p className="text-center text-lg font-semibold">
+      Connect a wallet to view your collections
+    </p>
+  ))}
 
-              {tab === "mine" &&
-                (isConnected ? (
-                  <MyCollections addresses={collections} viewer={address!.toLowerCase()} />
-                ) : (
-                  <p className="text-center text-lg font-semibold">
-                    Connect a wallet to view your collections
-                  </p>
-                ))}
 
               {tab === "generate" && <CodeGenerator />}
             </div>
