@@ -5,12 +5,14 @@ import axios from 'axios'
 import { keccak256, encodePacked } from 'viem'
 import { useReadContract } from 'wagmi'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 
 const pinataJWT = process.env.NEXT_PUBLIC_PINATA_JWT!
 
 type Combined = { code: string; uri: string; hash: string }
 
 export default function GenerateHashesTab() {
+  const searchParams = useSearchParams()
   const [images, setImages] = useState<File[]>([])
   const [passes, setPasses] = useState('')
   const [addressInput, setAddressInput] = useState('')
@@ -19,7 +21,16 @@ export default function GenerateHashesTab() {
   const [combinedOutput, setCombinedOutput] = useState<Combined[]>([])
   const [status, setStatus] = useState('')
   const [metaCID, setMetaCID] = useState<string | null>(null)
-    const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // Initialize address from URL parameter
+  useEffect(() => {
+    const addressParam = searchParams.get('address')
+    if (addressParam && addressParam.startsWith('0x') && addressParam.length === 42) {
+      setAddressInput(addressParam)
+      setSelectedAddress(addressParam as `0x${string}`)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     const v = addressInput.trim()
