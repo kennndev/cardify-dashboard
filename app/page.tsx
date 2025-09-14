@@ -101,10 +101,17 @@ function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
 
   /* ───── hooks ───── */
   const { user } = usePrivy() // gives Supabase user_id
-  const { isConnected } = useAccount()
+  const { isConnected, address } = useAccount()
   const { data: walletClient } = useWalletClient()
   const { writeContractAsync } = useWriteContract()
   const publicClient = usePublicClient()
+
+  // Auto-populate royalty recipient when wallet connects
+  useEffect(() => {
+    if (isConnected && address) {
+      setRoyaltyRecipient(address)
+    }
+  }, [isConnected, address])
 
 
   /* NEW – wallet connector */
@@ -167,8 +174,8 @@ function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
     setName("")
     setSymbol("")
     setPrice("0")
-    setRoyaltyRecipient("")
     setRoyaltyPct("500")
+    // Don't reset royaltyRecipient - it will be auto-populated when wallet reconnects
   }
 
   return (
@@ -225,15 +232,14 @@ function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
             <span className="w-2 h-2 bg-gradient-to-r from-fuchsia-500 to-pink-500 rounded-full" />
             <span>Mint Price (ETH)</span>
           </label>
-          <input
-            required
-            type="number"
-            step="0.0001"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            placeholder="0"
-            className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
-          />
+        <input
+          type="number"
+          step="0.0001"
+          value={price}
+          readOnly
+          className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl bg-gray-100/50 backdrop-blur-sm cursor-not-allowed text-gray-600"
+        />
+        <p className="text-xs text-gray-500">Fixed at 0 ETH (free minting)</p>
         </div>
 
         {/* royalty recipient */}
@@ -243,12 +249,12 @@ function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
             <span>Royalty Recipient</span>
           </label>
           <input
-            required
             value={royaltyRecipient}
-            onChange={(e) => setRoyaltyRecipient(e.target.value)}
-            placeholder="0x..."
-            className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
+            readOnly
+            placeholder="Connect wallet to auto-fill"
+            className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl bg-gray-100/50 backdrop-blur-sm cursor-not-allowed text-gray-600"
           />
+          <p className="text-xs text-gray-500">Auto-filled from connected wallet</p>
         </div>
       </div>
 
@@ -259,13 +265,12 @@ function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
           <span>Royalty Percentage (basis points)</span>
         </label>
         <input
-          required
           type="number"
           value={royaltyPct}
-          onChange={(e) => setRoyaltyPct(e.target.value)}
-          placeholder="500 (5%)"
-          className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
+          readOnly
+          className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl bg-gray-100/50 backdrop-blur-sm cursor-not-allowed text-gray-600"
         />
+        <p className="text-xs text-gray-500">Fixed at 500 basis points (5%)</p>
       </div>
 
       {/* ───────── action button ───────── */}
