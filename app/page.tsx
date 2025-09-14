@@ -95,9 +95,9 @@ function Tab({ label, active, onClick }: { label: string; active: boolean; onCli
 function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
   const [name, setName] = useState("")
   const [symbol, setSymbol] = useState("")
-  const [price, setPrice] = useState("")
+  const [price, setPrice] = useState("0")
   const [royaltyRecipient, setRoyaltyRecipient] = useState("")
-  const [royaltyPct, setRoyaltyPct] = useState("")
+  const [royaltyPct, setRoyaltyPct] = useState("500")
 
   /* ───── hooks ───── */
   const { user } = usePrivy() // gives Supabase user_id
@@ -166,9 +166,9 @@ function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
     onDeployed(txHash)
     setName("")
     setSymbol("")
-    setPrice("")
+    setPrice("0")
     setRoyaltyRecipient("")
-    setRoyaltyPct("")
+    setRoyaltyPct("500")
   }
 
   return (
@@ -231,7 +231,7 @@ function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
             step="0.0001"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-            placeholder="0.001"
+            placeholder="0"
             className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
           />
         </div>
@@ -263,7 +263,7 @@ function DeployForm({ onDeployed }: { onDeployed: (hash: string) => void }) {
           type="number"
           value={royaltyPct}
           onChange={(e) => setRoyaltyPct(e.target.value)}
-          placeholder="250 (2.5%)"
+          placeholder="500 (5%)"
           className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all duration-300 bg-white/50 backdrop-blur-sm hover:bg-white group-hover:border-violet-300"
         />
       </div>
@@ -303,6 +303,7 @@ interface CollectionRowProps {
   addr: `0x${string}`
   viewer: string
 }
+
 
 function CollectionRow({ addr, viewer }: CollectionRowProps) {
   const publicClient = usePublicClient()
@@ -482,6 +483,11 @@ href={`https://sepolia.basescan.org/address/${addr}`}
                   >
                     {open ? "Cancel" : "Add Hashes"}
                   </button>
+                  <Link href={`/generateHashes?address=${addr}`}>
+                    <button className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl hover:from-emerald-400 hover:to-teal-400 transition-all duration-300 text-sm font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
+                      Generate Hashes
+                    </button>
+                  </Link>
                   <button
                     onClick={handleAddToFrontend}
                     disabled={pushing}
@@ -522,6 +528,7 @@ href={`https://sepolia.basescan.org/address/${addr}`}
           )}
         </div>
       </div>
+
     </div>
   )
 }
