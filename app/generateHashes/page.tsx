@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense } from 'react'
 import axios from 'axios'
 import { keccak256, encodePacked } from 'viem'
 import { useReadContract } from 'wagmi'
@@ -11,7 +11,7 @@ const pinataJWT = process.env.NEXT_PUBLIC_PINATA_JWT!
 
 type Combined = { code: string; uri: string; hash: string }
 
-export default function GenerateHashesTab() {
+function GenerateHashesContent() {
   const searchParams = useSearchParams()
   const [images, setImages] = useState<File[]>([])
   const [passes, setPasses] = useState('')
@@ -339,5 +339,22 @@ return (
         </div>
       </main>
     </div>
+  )
+}
+
+export default function GenerateHashesTab() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-3xl flex items-center justify-center mx-auto animate-pulse">
+            <span className="text-2xl">🎯</span>
+          </div>
+          <p className="text-gray-600 font-semibold">Loading Generate Hashes...</p>
+        </div>
+      </div>
+    }>
+      <GenerateHashesContent />
+    </Suspense>
   )
 }
